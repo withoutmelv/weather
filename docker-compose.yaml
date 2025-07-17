@@ -1,0 +1,11 @@
+services:
+  weather-app:
+    image: weather
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      STATIC_RESOURCE_PATH: public
+      IMAGE_PATH: pred
+      MODEL_LIST: CMA-GFS,EC
+      DEFAULT_MODEL: EC

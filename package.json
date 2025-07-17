@@ -1,0 +1,27 @@
+{
+  "name": "weather-data-visualization",
+  "version": "1.0.0",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon app.js",
+    "docker": "docker build -t weather .",
+    "save": "docker save -o weather.tar weather",
+    "docker-run": "docker run -p 3000:3000 weather",
+    "docker-compose": "docker compose -f docker-compose.yaml up -d"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "dayjs": "^1.11.13",
+    "dotenv": "^17.2.0",
+    "ejs": "^3.1.10",
+    "koa": "^3.0.0",
+    "koa-router": "^13.0.1",
+    "koa-static": "^5.0.0",
+    "koa-views": "^8.1.0",
+    "nodemon": "^3.1.10"
+  }
+}

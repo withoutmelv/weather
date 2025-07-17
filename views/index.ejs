@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI云检测误差分析系统</title>
+    <script src="/tailwindcss.js"></script>
+    <link href="/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#165DFF',
+                        secondary: '#0FC6C2',
+                        success: '#00B42A',
+                        warning: '#FF7D00',
+                        danger: '#F53F3F',
+                        info: '#86909C',
+                        'time-tab': '#F2F3F5',
+                        'time-tab-active': '#3b82f6',
+                    },
+                    fontFamily: {
+                        inter: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                    boxShadow: {
+                        'card': '0 2px 14px 0 rgba(0, 0, 0, 0.06)',
+                    }
+                },
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .scrollbar-hide {
+                -ms-overflow-style: none;
+                scrollbar-width: none;
+            }
+            .scrollbar-hide::-webkit-scrollbar {
+                display: none;
+            }
+            .tab-active {
+                @apply bg-time-tab-active text-white border-primary;
+            }
+            .color-scale {
+                @apply h-3 w-full bg-gradient-to-r border border-gray-300;
+            }
+        }
+        
+        .map {
+            height: 35vh;
+            width: 100%;
+        }
+        .simple-label-tooltip {
+            font-size: 0.875rem;
+            /* text-sm */
+            color: #1f2937;
+            /* text-gray-800 */
+            font-weight: 700;
+            /* font-bold */
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            z-index: 999;
+        }
+    </style>
+    <style>
+        /* 自定义滚动条样式 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        /* 隐藏滚动条按钮 */
+        ::-webkit-scrollbar-button {
+            display: none;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+    </style>
+</head>
+
+<body class="font-inter bg-gray-50 min-h-screen">
+    <div class="max-w-12xl">
+        <div class="flex">
+            <!-- 左侧时间选择栏 -->
+            <div class="w-48 lg:w-48 rounded-xl p-2">
+                <div class="flex items-center mb-4">
+                    <div class="border border-gray-300 rounded w-full flex">
+                        <% for(let model of modelList) { %>
+                            <button class="tab-btn w-1/2 <%= defaultModel === model ? 'active border-primary bg-blue-500 text-white shadow-sm' : 'border-primary text-gray-500 hover:bg-gray-50 hover:text-gray-700' %> px-2 py-1 text-center font-bold text-base transition-all duration-200" value=<%= model %> style="font-size: 12px;"><%= model %></button>
+                        <% } %>
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <h2 class="text-lg text-gray-800 flex items-center justify-around">
+                        <span class="">起报时间选择</span>
+                    </h2>
+                </div>
+
+                <div class="space-y-2 overflow-y-auto max-h-[calc(100vh-100px)] scrollbar-hide pr-1">
+                    <div class="mb-3">
+                        <input type="text" id="timeSearch" placeholder="搜索时间..."
+                            class="w-full p-2 border border-gray-300 rounded-md focus:outline-none">
+                    </div>
+                    <!-- 时间标签页 - 今天 -->
+                    <div class="grid max-h-[calc(30vh)] grid-cols-1 gap-2 overflow-y-auto custom-scrollbar reportList">
+                        <% if (reportTimeList.length> 0) { %>
+                            <% reportTimeList.forEach(time=> { %>
+                                <button onclick="locationReload('report', this.value)"
+                                    class="time-option <%= time === defaultReportTime ? 'tab-active' : '' %> report border-b-2 border-gray-200 py-2 px-3 w-full flex flex-wrap justify-around text-center items-center"
+                                    value="<%= time %>" data-time="<%= time %>"
+                                >
+                                    <%= time.slice(5) %>
+                                </button>
+                            <% }) %>
+                        <% } else { %>
+                            <p class="no-data">暂无时间数据</p>
+                        <% } %>
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <h2 class="text-lg text-gray-800 flex items-center justify-around">
+                        <span class="">预报时间</span>
+                        
+                    </h2>
+
+                    <!-- 修改为单个切换按钮 -->
+                    <div class="flex mt-2 mb-2 gap-2">
+                        <button id="toggleBtn" class="bg-blue-500 text-white py-1 px-2 rounded flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 1408 1600"><!-- Icon from Font Awesome 4 by Dave Gandy - https://scripts.sil.org/cms/scripts/page.php?site_id=nrsi&id=OFL --><path fill="currentColor" d="M1384 831L56 1569q-23 13-39.5 3T0 1536V64q0-26 16.5-36T56 31l1328 738q23 13 23 31t-23 31"/></svg>
+                            播放
+                        </button>
+                    </div>
+
+                    <div class="max-h-1/2 overflow-hidden shadow-card forcastList">
+                        <% if (Object.keys(reportForcastMap[defaultReportTime]).length> 0) { %>
+                            <% Object.keys(reportForcastMap[defaultReportTime]).forEach(forcast=> { %>
+                                <button
+                                    onclick="locationReload('forcast', this.value)"
+                                    class="<%= forcast === defaultReportTime ? 'tab-active' : '' %> forcast py-1 px-1 w-full flex flex-wrap justify-around  text-center items-center"
+                                    value="<%= forcast %>"
+                                    data-img="<%= reportForcastMap[defaultReportTime][forcast] %>"
+                                >
+                                    <div class="w-1/2"><%= forcast.slice(5) %></div>
+                                </button>
+                            <% }) %>
+                        <% } else { %>
+                            <p class="no-data">暂无时间数据</p>
+                        <% } %>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧图片区域 -->
+            <div class="w-full lg:w-full h-screen relative overflow-hidden pic-container bg-white">
+                <!-- 图片网格 -->
+                <img id="weatherImage" class="img-content w-full h-full object-contain transition-transform duration-300 ease-in-out" src="" alt="">
+            </div>
+        </div>
+    </div>
+
+        <!-- 根据点击事件切换图片 -->
+    <script>
+        function changeForcastAndReportTime(reportTime) {
+            const timeMap = <%- JSON.stringify(reportForcastMap) %>;
+            document.querySelector('.tab-active.report').classList.remove('tab-active');
+            document.querySelector(`.report[value="${reportTime}"]`).classList.add('tab-active');
+            let forcastTimeList = timeMap[reportTime];
+            const defaultForcastTime = Object.keys(forcastTimeList)[0];
+            const imagePath = forcastTimeList[defaultForcastTime];
+            const forcastDiv = document.querySelector('.forcastList');
+            forcastDiv.innerHTML = '';
+            forcastDiv.innerHTML = Object.keys(forcastTimeList).map(forcast=> {
+                return `<button
+                            onclick="locationReload('forcast', this.value)"
+                            class="${forcast === defaultForcastTime ? 'tab-active' : '' } forcast py-1 px-1 w-full flex flex-wrap justify-around  text-center items-center"
+                            value="${forcast}"
+                        >
+                            <div class="w-1/2">${forcast.slice(5)}</div>
+                    </button>`
+            }).join('');
+            buttons = document.querySelectorAll('.forcast');
+            return imagePath;
+        }
+
+        function changeReportTime(reportTime, forcastTime) {
+            const timeMap = <%- JSON.stringify(reportForcastMap) %>;
+            document.querySelector('.tab-active.forcast').classList.remove('tab-active');
+            document.querySelector(`.forcast[value="${forcastTime}"]`).classList.add('tab-active');
+            return timeMap[reportTime][forcastTime];
+        }
+
+        function locationReload(type, value) {
+            switch(type) {
+                case 'model':
+                    break;
+                case 'report':
+                    loadImg(changeForcastAndReportTime(value));
+                    break;
+                case 'forcast':
+                    loadImg(changeReportTime(document.querySelector('.tab-active.report')?.value, value));
+                    break;
+            }
+        }
+    </script>
+
+
+
+<!-- 图片加载 -->
+    <script>
+        function loadImg(src) {
+            const imgContent = document.querySelector('.img-content');
+            imgContent.src = document.querySelector(`.tab-active.forcast`).dataset.img ? document.querySelector(`.tab-active.forcast`).dataset.img : src;
+        }
+        // 页面加载完成后加载初始图片
+        document.addEventListener('DOMContentLoaded', loadImg);
+    </script>
+
+    <!-- 搜索 -->
+    <script>
+        // 添加搜索过滤功能
+        document.getElementById('timeSearch').addEventListener('input', function (e) {
+            const searchTerm = e.target.value.toLowerCase();
+            const timeOptions = document.querySelectorAll('.time-option');
+
+            timeOptions.forEach(option => {
+                const timeText = option.getAttribute('data-time').toLowerCase();
+                const displayText = option.textContent.toLowerCase();
+                if (timeText.includes(searchTerm) || displayText.includes(searchTerm)) {
+                    option.style.display = '';
+                } else {
+                    option.style.display = 'none';
+                }
+            });
+        });
+    </script>
+
+<script>
+    let carouselInterval;
+    let currentIndex = 0;
+    let isPlaying = false; // 新增状态变量
+    let buttons = document.querySelectorAll('.forcast');
+    const toggleBtn = document.getElementById('toggleBtn');
+
+    toggleBtn.addEventListener('click', () => {
+        if (buttons.length === 0) return;
+
+        if (isPlaying) {
+            // 当前是播放状态，切换到暂停
+            clearInterval(carouselInterval);
+            toggleBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 1408 1600"><!-- Icon from Font Awesome 4 by Dave Gandy - https://scripts.sil.org/cms/scripts/page.php?site_id=nrsi&id=OFL --><path fill="currentColor" d="M1384 831L56 1569q-23 13-39.5 3T0 1536V64q0-26 16.5-36T56 31l1328 738q23 13 23 31t-23 31"/></svg>
+                播放
+            `;
+            toggleBtn.classList.remove('bg-red-500');
+            toggleBtn.classList.add('bg-blue-500');
+        } else {
+            // 当前是暂停状态，切换到播放
+            carouselInterval = setInterval(() => {
+                currentIndex = (currentIndex + 1) % buttons.length;
+                buttons[currentIndex].click();
+            }, 1000);
+            toggleBtn.innerHTML =  `
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 1536 1536"><!-- Icon from Font Awesome 4 by Dave Gandy - https://scripts.sil.org/cms/scripts/page.php?site_id=nrsi&id=OFL --><path fill="currentColor" d="M1536 64v1408q0 26-19 45t-45 19H960q-26 0-45-19t-19-45V64q0-26 19-45t45-19h512q26 0 45 19t19 45m-896 0v1408q0 26-19 45t-45 19H64q-26 0-45-19t-19-45V64q0-26 19-45T64 0h512q26 0 45 19t19 45"/></svg>
+                暂停
+            `;
+            toggleBtn.classList.remove('bg-blue-500');
+            toggleBtn.classList.add('bg-red-500');
+        }
+        isPlaying = !isPlaying; // 切换状态
+    });
+</script>
+
+</body>
+
+</html>
