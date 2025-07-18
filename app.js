@@ -7,12 +7,17 @@ const router = new Router();
 const fs = require('fs').promises;
 const dayjs = require('dayjs');
 const serve = require('koa-static'); // 引入静态文件服务中间件
+const os = require('os');
+const axios = require('axios');
 const {imageDataPath, staticResourcePath} = require('./config');
 const app = new Koa();
 
 const MODEL_LIST = process.env.MODEL_LIST.split(',');
 const DEFAULT_MODEL = process.env.DEFAULT_MODEL;
 const IMAGE_NAME = process.env.IMAGE_NAME;
+const INPUT_DIR = process.env.INPUT_DIR;
+const OUTPUT_DIR = process.env.OUTPUT_DIR;
+let localIP = '127.0.0.1';
 
 
 
@@ -34,7 +39,8 @@ router.get('/', async (ctx) => {
   forcastHourList[reportHourList[1]] = forcastPmHourList;
 
   const currentHour = new Date().getHours();
-  const currentReportTime = dayjs(process.env.START_DATE).hour(currentHour >= 12 ? 12 : 0).minute(0).format('YYYY-MM-DD HH:mm');
+  // currentHour >= 12 ? 12 : 
+  const currentReportTime = dayjs(process.env.START_DATE).hour(0).minute(0).format('YYYY-MM-DD HH:mm');
 
 
   function formatDate(dateString) {
@@ -57,12 +63,30 @@ router.get('/', async (ctx) => {
   });
 });
 
+function getPredictTime(reportDate) {
+  const reportHour = dayjs(reportDate).hour();
+  const hourList = [];
+  if (reportHour >= 12) {
+    for (let i =1; i <=4; i++) {
+      hourList.push(dayjs(reportDate).add(i * 3, 'hour').format('MMDDHH00'));
+    }
+  } else {
+    for (let i =1; i <=4; i++) {
+      hourList.push(dayjs(reportDate).add(i * 3, 'hour').format('MMDDHH00'));
+    }
+  }
+  return hourList;
+}
+
 
 // 添加图片请求处理路由
 router.get('/:reportDate/:forcastDate', async (ctx) => {
   const { reportDate, forcastDate } = ctx.params;
+  console.log(reportDate, forcastDate);
   const imagePath = path.join(imageDataPath, reportDate, forcastDate, IMAGE_NAME);
   const dirPath = path.join(imageDataPath, reportDate, forcastDate); // 添加目录路径
+  const year = dayjs(reportDate).year() + '';
+  const dateStr = dayjs(reportDate).format('YYYYMMDD');
   try {
     // 先检查目录是否存在
     await fs.access(dirPath, fs.constants.F_OK);
@@ -97,9 +121,29 @@ router.get('/:reportDate/:forcastDate', async (ctx) => {
       ctx.body = { status: '文件读取失败' };
     }
   } catch (err) {
-    // 目录不存在 - 无数据
-    ctx.status = 404;
-    ctx.body = { status: '无数据' };
+    const ECpath = path.join(__dirname, INPUT_DIR, year, dateStr);
+    try {
+      let ECFiles = await fs.readdir(ECpath);
+      ECFiles = ECFiles.filter(f => {
+        const report2ForcastDate = (f.split('C1D')[1]).split('.')[0];
+        const predictTimeList = getPredictTime(reportDate);
+        return report2ForcastDate.slice(0, 8) === dayjs(reportDate).format('MMDDHH00') && predictTimeList.includes(report2ForcastDate.slice(8, 16));
+      }).map(f => path.join(ECpath, f));
+      axios.post(`http://${localIP}:${process.env.API_PORT}${process.env.API_URL}`, {
+        data_paths: ECFiles,
+        data_type: "EC",
+        output_dir: OUTPUT_DIR
+      }).catch(err => {
+        console.error('API 请求失败:', err);
+      });
+      // 目录不存在 - 无数据
+      ctx.status = 202;
+      ctx.body = { status: '数据预测中' };
+    } catch(err) {
+      // 目录不存在 - 无数据
+      ctx.status = 404;
+      ctx.body = { status: '无数据' };
+    }
   }
 });
 
@@ -108,5 +152,18 @@ app.use(router.routes()).use(router.allowedMethods());
 // 启动服务器
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  const getLocalIP = () => {
+    const interfaces = os.networkInterfaces();
+    for (const devName in interfaces) {
+      const iface = interfaces[devName];
+      for (const alias of iface) {
+        if (alias.family === 'IPv4' && alias.address !== '127.0.0.1' && !alias.internal) {
+          return alias.address;
+        }
+      }
+    }
+    return '127.0.0.1'; // 默认返回本地回环地址
+  };
+  localIP = getLocalIP();
+  console.log(`Server running on http://${localIP}:${PORT}`);
 });

@@ -7,9 +7,9 @@
     <title>AI云检测误差分析系统</title>
     <script src="/tailwindcss.js"></script>
     <link href="/font-awesome.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-    <script src="https://npmcdn.com/flatpickr/dist/flatpickr.min.js"></script>
-    <script src="https://npmcdn.com/flatpickr/dist/l10n/zh.js"></script>
+    <link rel="stylesheet" href="/flatpickr.min.css">
+    <script src="/flatpickr.min.js"></script>
+    <script src="/zh.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -303,7 +303,7 @@
         const statusElement = document.querySelector('.loading-status') || createStatusElement();
 
         // 显示加载状态
-        statusElement.innerHTML = '<div class="spinner"></div> 数据预测中...';
+        statusElement.innerHTML = '<div class="spinner"></div> 正在请求图片资源...';
         statusElement.className = 'loading-status text-center py-4 text-blue-600';
         imgContent.style.display = 'none';
         imgContent.src = '';
@@ -347,7 +347,7 @@
                             clearInterval(window.pollInterval);
                             window.pollInterval = null;
                         }
-                    }, 10000);
+                    }, 50000);
                 } else {
                     // 其他错误状态，清除轮询定时器
                     if (window.pollInterval) {

@@ -3,9 +3,22 @@ services:
     image: weather
     ports:
       - "3000:3000"
+    volumes:
+      - ./input:/app/input
+      - ./output:/app/output
     environment:
       NODE_ENV: production
       STATIC_RESOURCE_PATH: public
       IMAGE_PATH: pred
       MODEL_LIST: CMA-GFS,EC
       DEFAULT_MODEL: EC
+
+  api_app:
+    image: api_app
+    volumes:
+      - ./input:/app/input
+      - ./output:/app/output
+    ports:
+      - "5000:5000"
+
+  
