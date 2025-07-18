@@ -1,7 +1,9 @@
-output/pred
+output
 
 *.tar
 
 node_modules
 
 input
+
+logs

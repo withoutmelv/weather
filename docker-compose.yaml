@@ -6,6 +6,7 @@ services:
     volumes:
       - ./input:/app/input
       - ./output:/app/output
+      - ./logs:/app/logs
     environment:
       NODE_ENV: production
       STATIC_RESOURCE_PATH: public

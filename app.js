@@ -9,16 +9,57 @@ const dayjs = require('dayjs');
 const serve = require('koa-static'); // 引入静态文件服务中间件
 const os = require('os');
 const axios = require('axios');
+const winston = require('winston');
 const {imageDataPath, staticResourcePath} = require('./config');
-const app = new Koa();
 
+
+const app = new Koa();
 const MODEL_LIST = process.env.MODEL_LIST.split(',');
 const DEFAULT_MODEL = process.env.DEFAULT_MODEL;
 const IMAGE_NAME = process.env.IMAGE_NAME;
 const INPUT_DIR = process.env.INPUT_DIR;
 const OUTPUT_DIR = process.env.OUTPUT_DIR;
+const START_DATE = process.env.START_DATE || dayjs().format('YYYY-MM-DD');
 let localIP = '127.0.0.1';
 
+
+// 确保日志目录存在
+const logDir = path.join(__dirname, 'logs');
+if (!fs.access(logDir)) {
+  fs.mkdir(logDir);
+}
+
+// 配置winston日志
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.combine(
+    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+    winston.format.printf(info => `${info.timestamp} [${info.level.toUpperCase()}]: ${info.message}`)
+  ),
+  transports: [
+    // 控制台输出
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+        winston.format.printf(info => `${info.timestamp} [${info.level.toUpperCase()}]: ${info.message}`)
+      )
+    }),
+    // 文件输出 - 所有日志
+    new winston.transports.File({
+      filename: path.join(logDir, 'combined.log'),
+      maxsize: 5242880, // 5MB
+      maxFiles: 5
+    }),
+    // 文件输出 - 错误日志
+    new winston.transports.File({
+      filename: path.join(logDir, 'error.log'),
+      level: 'error',
+      maxsize: 5242880, // 5MB
+      maxFiles: 5
+    })
+  ]
+});
 
 
 // 配置静态文件目录（假设静态文件在public目录下）
@@ -30,6 +71,7 @@ app.use(views(path.join(__dirname, 'views'), {
 
 // 默认路由 (显示最新时间的图片)
 router.get('/', async (ctx) => {
+  logger.info('首页请求 - 用户访问主页');
   const defaultModel = DEFAULT_MODEL;
   const reportHourList = process.env.REPORT_HOUR_LIST.split(',');
   const forcastAmHourList = process.env.FORCAST_AM_HOUR_LIST.split(',');
@@ -39,8 +81,7 @@ router.get('/', async (ctx) => {
   forcastHourList[reportHourList[1]] = forcastPmHourList;
 
   const currentHour = new Date().getHours();
-  const currentReportTime = dayjs(process.env.START_DATE || '').hour(currentHour >= 12 ? 12 : 0).minute(0).format('YYYY-MM-DD HH:mm');
-
+  const currentReportTime = dayjs(START_DATE).hour(currentHour >= 12 ? 12 : 0).minute(0).format('YYYY-MM-DD HH:mm');
 
   function formatDate(dateString) {
     const date = new Date(dateString);
@@ -57,7 +98,7 @@ router.get('/', async (ctx) => {
     reportHourList,
     forcastHourList,
     currentReportTime,
-    startDate: process.env.START_DATE,
+    startDate: START_DATE,
     formatDate,
   });
 });
@@ -81,7 +122,7 @@ function getPredictTime(reportDate) {
 // 添加图片请求处理路由
 router.get('/:reportDate/:forcastDate', async (ctx) => {
   const { reportDate, forcastDate } = ctx.params;
-  console.log(reportDate, forcastDate);
+  logger.info(`图片请求 - reportDate: ${reportDate}, forcastDate: ${forcastDate}`);
   const imagePath = path.join(imageDataPath, reportDate, forcastDate, IMAGE_NAME);
   const dirPath = path.join(imageDataPath, reportDate, forcastDate); // 添加目录路径
   const year = dayjs(reportDate).year() + '';
@@ -89,9 +130,10 @@ router.get('/:reportDate/:forcastDate', async (ctx) => {
   try {
     // 先检查目录是否存在
     await fs.access(dirPath, fs.constants.F_OK);
-    
+    logger.debug(`目录存在: ${dirPath}`);
     // 目录存在，读取目录内容
     const files = await fs.readdir(dirPath);
+    logger.debug(`目录内容: ${files.join(', ')}`);
     
     if (files.length === 0) {
       // 目录存在但无文件 - 模型预测中
@@ -115,12 +157,13 @@ router.get('/:reportDate/:forcastDate', async (ctx) => {
       ctx.set('Content-Type', contentType);
       ctx.body = data;
     } catch (err) {
-      console.error('读取文件失败:', err);
+      logger.error(`文件读取失败: ${err.message}`);
       ctx.status = 500;
       ctx.body = { status: '文件读取失败' };
     }
   } catch (err) {
     const ECpath = path.join(__dirname, INPUT_DIR, year, dateStr);
+    logger.debug(`EC目录路径: ${ECpath}`);
     try {
       let ECFiles = await fs.readdir(ECpath);
       ECFiles = ECFiles.filter(f => {
@@ -128,17 +171,26 @@ router.get('/:reportDate/:forcastDate', async (ctx) => {
         const predictTimeList = getPredictTime(reportDate);
         return report2ForcastDate.slice(0, 8) === dayjs(reportDate).format('MMDDHH00') && predictTimeList.includes(report2ForcastDate.slice(8, 16));
       }).map(f => path.join(ECpath, f));
+      logger.debug(`筛选后的EC文件: ${ECFiles.join(', ')}`);
+      logger.info(`API 请求 - 数据路径: ${JSON.stringify({
+        data_paths: ECFiles,
+        data_type: "EC",
+        output_dir: OUTPUT_DIR
+      })}`);
       axios.post(`http://${localIP}:${process.env.API_PORT}${process.env.API_URL}`, {
         data_paths: ECFiles,
         data_type: "EC",
         output_dir: OUTPUT_DIR
+      }).then(res => {
+        logger.info(`API 请求成功: ${res}`);
       }).catch(err => {
-        console.error('API 请求失败:', err);
+        logger.error('API 请求失败:', err);
       });
       // 目录不存在 - 无数据
       ctx.status = 202;
       ctx.body = { status: '数据预测中' };
     } catch(err) {
+      logger.error(`原始数据处理失败: ${err.message}`);
       // 目录不存在 - 无数据
       ctx.status = 404;
       ctx.body = { status: '原始数据获取失败' };
@@ -164,5 +216,5 @@ app.listen(PORT, () => {
     return '127.0.0.1'; // 默认返回本地回环地址
   };
   localIP = getLocalIP();
-  console.log(`Server running on http://${localIP}:${PORT}`);
+  logger.info(`服务器启动成功 - http://${localIP}:${PORT}`);
 });
