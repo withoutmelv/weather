@@ -9,9 +9,17 @@ services:
     environment:
       NODE_ENV: production
       STATIC_RESOURCE_PATH: public
-      IMAGE_PATH: pred
+      IMAGE_PATH: output/pred
+      OUTPUT_DIR: output
       MODEL_LIST: CMA-GFS,EC
       DEFAULT_MODEL: EC
+      IMAGE_NAME: mix.png
+      REPORT_HOUR_LIST: 00:00,12:00
+      FORCAST_AM_HOUR_LIST: 03:00,06:00,09:00,12:00
+      FORCAST_PM_HOUR_LIST: 15:00,18:00,21:00,24:00
+      API_URL: /predict
+      API_PORT: 5000
+      INPUT_DIR: input
 
   api_app:
     image: api_app

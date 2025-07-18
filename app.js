@@ -39,8 +39,7 @@ router.get('/', async (ctx) => {
   forcastHourList[reportHourList[1]] = forcastPmHourList;
 
   const currentHour = new Date().getHours();
-  // currentHour >= 12 ? 12 : 
-  const currentReportTime = dayjs(process.env.START_DATE).hour(0).minute(0).format('YYYY-MM-DD HH:mm');
+  const currentReportTime = dayjs(process.env.START_DATE || '').hour(currentHour >= 12 ? 12 : 0).minute(0).format('YYYY-MM-DD HH:mm');
 
 
   function formatDate(dateString) {
@@ -142,7 +141,7 @@ router.get('/:reportDate/:forcastDate', async (ctx) => {
     } catch(err) {
       // 目录不存在 - 无数据
       ctx.status = 404;
-      ctx.body = { status: '无数据' };
+      ctx.body = { status: '原始数据获取失败' };
     }
   }
 });
