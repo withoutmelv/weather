@@ -96,6 +96,30 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #a8a8a8;
         }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(59, 130, 246, 0.3);
+            border-radius: 50%;
+            border-top-color: #3b82f6;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-status {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            transition: all 0.3s ease;
+        }
     </style>
 </head>
 
@@ -188,16 +212,14 @@
             const minutes = String(date.getMinutes()).padStart(2, '0');
             return type ? `${year}${month}${day}${hours}${minutes}00` : `${month}-${day} ${hours}:${minutes}`;
         }
-        function loadImg(src) {
-            const imgContent = document.querySelector('.img-content');
-            imgContent.src = src;
-        }
+        
         function changeForcastAndReportTime(reportHour) {
             // 获取ejs变量forcastHourList
             const forcastHourList = <%- JSON.stringify(forcastHourList || []) %>;
             document.querySelector('.tab-active.report').classList.remove('tab-active');
             document.querySelector(`.report[value="${reportHour}"]`).classList.add('tab-active');
             const date = document.querySelector('#myID').value;
+            console.log(date)
             const forcastListDiv = document.querySelector('.forcastList');
             forcastListDiv.innerHTML = `
                 ${forcastHourList[reportHour].map((forcast, index)=> {
@@ -217,7 +239,8 @@
             // 去掉日期中的所有符号和空格
             const reportTimeReplace = reportTime.replace(/[^\d]/g, '');
             const forcastTimeReplace = (forcastTime).replace(/[^\d]/g, '');
-            return `/pred/${reportTimeReplace}/${forcastTimeReplace}/mix.png`;
+            buttons = document.querySelectorAll('.forcast');
+            return `${reportTimeReplace}/${forcastTimeReplace}`;
         }
 
         function changeReportTime(reportHour, forcastHour) {
@@ -229,7 +252,7 @@
             // 去掉日期中的所有符号和空格
             const reportTimeReplace = reportTime.replace(/[^\d]/g, '');
             const forcastTimeReplace = forcastTime.replace(/[^\d]/g, '');
-            return `/pred/${reportTimeReplace}/${forcastTimeReplace}/mix.png`;
+            return `${reportTimeReplace}/${forcastTimeReplace}`;
         }
 
         function locationReload(type, value) {
@@ -247,6 +270,8 @@
     </script>
 
 
+
+
 <script>
     const startDate = "<%= startDate %>"
     flatpickr("#myID", {
@@ -256,7 +281,10 @@
                 return new Date(date).getTime() > new Date().getTime();
             }
         ],
-        defaultDate: startDate
+        defaultDate: startDate,
+        onChange: (selectedDates, dateStr, instance) => {
+            loadImg(changeForcastAndReportTime(document.querySelector('.tab-active.report')?.value));
+        }
     });
 
 </script>
@@ -264,10 +292,91 @@
 
 <!-- 图片加载 -->
     <script>
-        // 页面加载完成后加载初始图片
-        document.addEventListener('DOMContentLoaded', () => {
-            buttons[0].click();
-        });
+    function loadImg(src) {
+        // 清除可能存在的轮询定时器
+        if (window.pollInterval) {
+            clearInterval(window.pollInterval);
+            window.pollInterval = null;
+        }
+
+        const imgContent = document.querySelector('.img-content');
+        const statusElement = document.querySelector('.loading-status') || createStatusElement();
+
+        // 显示加载状态
+        statusElement.innerHTML = '<div class="spinner"></div> 数据预测中...';
+        statusElement.className = 'loading-status text-center py-4 text-blue-600';
+        imgContent.style.display = 'none';
+        imgContent.src = '';
+
+        fetch(src)
+            .then(response => {
+                if (response.status === 200) {
+                    // 文件存在，返回图片
+                    return response.blob();
+                } else {
+                    // 解析错误状态信息
+                    return response.json().then(data => {
+                        throw new Error(data.status || '加载失败');
+                    });
+                }
+            })
+            .then(blob => {
+                // 加载成功，清除轮询定时器
+                if (window.pollInterval) {
+                    clearInterval(window.pollInterval);
+                    window.pollInterval = null;
+                }
+
+                imgContent.src = URL.createObjectURL(blob);
+                imgContent.style.display = 'block';
+                statusElement.style.display = 'none';
+            })
+            .catch(error => {
+                // 显示错误状态
+                if (error.message === '数据预测中') {
+                    statusElement.innerHTML = '<div class="spinner"></div> 模型预测中...';
+                    statusElement.className = 'loading-status text-center py-4 text-blue-600';
+
+                    // 设置轮询，每10秒重试一次
+                    window.pollInterval = setInterval(() => {
+                        // 检查是否仍需要轮询（防止用户已切换时间块但定时器未清除）
+                        if (document.querySelector('.loading-status') && 
+                            document.querySelector('.loading-status').textContent.includes('模型预测中')) {
+                            loadImg(src);
+                        } else if (window.pollInterval) {
+                            clearInterval(window.pollInterval);
+                            window.pollInterval = null;
+                        }
+                    }, 10000);
+                } else {
+                    // 其他错误状态，清除轮询定时器
+                    if (window.pollInterval) {
+                        clearInterval(window.pollInterval);
+                        window.pollInterval = null;
+                    }
+
+                    if (error.message === '无数据') {
+                        statusElement.textContent = '暂无数据';
+                        statusElement.className = 'loading-status text-center py-4 text-red-600';
+                    } else {
+                        statusElement.textContent = error.message;
+                        statusElement.className = 'loading-status text-center py-4 text-orange-600';
+                    }
+                }
+                statusElement.style.display = 'block';
+            });
+    }
+    // 创建状态显示元素（如果不存在）
+    function createStatusElement() {
+        const statusElement = document.createElement('div');
+        const imgContainer = document.querySelector('.img-content').parentNode;
+        imgContainer.appendChild(statusElement);
+        return statusElement;
+    }
+    // 页面加载完成后加载初始图片
+    document.addEventListener('DOMContentLoaded', () => {
+        buttons[0].click();
+    });
     </script>
 
 <script>

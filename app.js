@@ -7,15 +7,13 @@ const router = new Router();
 const fs = require('fs').promises;
 const dayjs = require('dayjs');
 const serve = require('koa-static'); // 引入静态文件服务中间件
-const {imageDataPath, staticResourcePath,} = require('./config');
+const {imageDataPath, staticResourcePath} = require('./config');
 const app = new Koa();
 
-const MAX_AGE = process.env.MAX_AGE;
-const BLOCK_LEN = process.env.BLOCK_LEN;
 const MODEL_LIST = process.env.MODEL_LIST.split(',');
-const IMAGE_PATH = process.env.IMAGE_PATH;
 const DEFAULT_MODEL = process.env.DEFAULT_MODEL;
 const IMAGE_NAME = process.env.IMAGE_NAME;
+
 
 
 // 配置静态文件目录（假设静态文件在public目录下）
@@ -25,54 +23,8 @@ app.use(views(path.join(__dirname, 'views'), {
   extension: 'ejs'
 }));
 
-// 获取所有时间列表的函数
-const getReportTimeList = async () => {
-  const timeList = new Set();
-  const sampleDir = path.join(imageDataPath);
-
-  try {
-    const folders = await fs.readdir(sampleDir, { withFileTypes: true });
-    for (const folder of folders.filter(d => d.isDirectory())) {
-      const match = folder.name.match(/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/);
-      if (match) {
-        const [_, year, month, day, hour, minute] = match;
-        const date = `${year}-${month}-${day} ${hour}:${minute}`;
-        timeList.add(date);
-      }
-    }
-  } catch (err) {
-    console.error('读取时间列表失败:', err);
-  }
-  return [...timeList]
-};
-
-const getForcastReportMap = async (dateList) => {
-  let reportTimeList = {};
-  for (let j = 0; j < dateList.length; j++) {
-    const reportPoint = dateList[j];
-    reportTimeList[reportPoint] = {}
-    const paths = path.join(imageDataPath, dayjs(reportPoint).format('YYYYMMDDHHmm'));
-    try {
-      const files = await fs.readdir(paths);
-      files.forEach((f) => {
-        let forcastPoint = dayjs(f.split('.')[0]).format('YYYY-MM-DD HH:mm');
-        reportTimeList[reportPoint][forcastPoint] = path.join(IMAGE_PATH, dayjs(reportPoint).format('YYYYMMDDHHmm'), f);
-      })
-    } catch(err) {
-      console.error('获取预测时间失败:', err);
-      continue;
-    }
-  }
-  return reportTimeList
-};
-
 // 默认路由 (显示最新时间的图片)
 router.get('/', async (ctx) => {
-  const reportTimeList = await getReportTimeList();
-  const reportForcastMap = await getForcastReportMap(reportTimeList);
-  const defaultReportTime = reportTimeList[0]
-
-
   const defaultModel = DEFAULT_MODEL;
   const reportHourList = process.env.REPORT_HOUR_LIST.split(',');
   const forcastAmHourList = process.env.FORCAST_AM_HOUR_LIST.split(',');
@@ -96,9 +48,6 @@ router.get('/', async (ctx) => {
 
   await ctx.render('index', {
     modelList: MODEL_LIST,
-    reportTimeList,
-    reportForcastMap,
-    defaultReportTime,
     defaultModel,
     reportHourList,
     forcastHourList,
@@ -106,6 +55,52 @@ router.get('/', async (ctx) => {
     startDate: process.env.START_DATE,
     formatDate,
   });
+});
+
+
+// 添加图片请求处理路由
+router.get('/:reportDate/:forcastDate', async (ctx) => {
+  const { reportDate, forcastDate } = ctx.params;
+  const imagePath = path.join(imageDataPath, reportDate, forcastDate, IMAGE_NAME);
+  const dirPath = path.join(imageDataPath, reportDate, forcastDate); // 添加目录路径
+  try {
+    // 先检查目录是否存在
+    await fs.access(dirPath, fs.constants.F_OK);
+    
+    // 目录存在，读取目录内容
+    const files = await fs.readdir(dirPath);
+    
+    if (files.length === 0) {
+      // 目录存在但无文件 - 模型预测中
+      ctx.status = 202;
+      ctx.body = { status: '数据预测中' };
+      return;
+    }
+    // 目录存在且有文件，继续检查目标文件
+    await fs.access(imagePath);
+    // 文件存在，返回图片
+    try {
+      const data = await fs.readFile(imagePath);
+      const ext = path.extname(imagePath).toLowerCase();
+      const contentType = {
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif'
+      }[ext] || 'application/octet-stream';
+
+      ctx.set('Content-Type', contentType);
+      ctx.body = data;
+    } catch (err) {
+      console.error('读取文件失败:', err);
+      ctx.status = 500;
+      ctx.body = { status: '文件读取失败' };
+    }
+  } catch (err) {
+    // 目录不存在 - 无数据
+    ctx.status = 404;
+    ctx.body = { status: '无数据' };
+  }
 });
 
 // 应用路由
