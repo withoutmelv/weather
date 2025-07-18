@@ -71,14 +71,40 @@ router.get('/', async (ctx) => {
   const reportTimeList = await getReportTimeList();
   const reportForcastMap = await getForcastReportMap(reportTimeList);
   const defaultReportTime = reportTimeList[0]
+
+
   const defaultModel = DEFAULT_MODEL;
-  console.log(reportForcastMap);
+  const reportHourList = process.env.REPORT_HOUR_LIST.split(',');
+  const forcastAmHourList = process.env.FORCAST_AM_HOUR_LIST.split(',');
+  const forcastPmHourList = process.env.FORCAST_PM_HOUR_LIST.split(',');
+  const forcastHourList = {};
+  forcastHourList[reportHourList[0]] = forcastAmHourList;
+  forcastHourList[reportHourList[1]] = forcastPmHourList;
+
+  const currentHour = new Date().getHours();
+  const currentReportTime = dayjs(process.env.START_DATE).hour(currentHour >= 12 ? 12 : 0).minute(0).format('YYYY-MM-DD HH:mm');
+
+
+  function formatDate(dateString) {
+    const date = new Date(dateString);
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${month}-${day} ${hours}:${minutes}`;
+  }
+
   await ctx.render('index', {
     modelList: MODEL_LIST,
     reportTimeList,
     reportForcastMap,
     defaultReportTime,
     defaultModel,
+    reportHourList,
+    forcastHourList,
+    currentReportTime,
+    startDate: process.env.START_DATE,
+    formatDate,
   });
 });
 

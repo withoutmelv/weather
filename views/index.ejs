@@ -7,6 +7,9 @@
     <title>AI云检测误差分析系统</title>
     <script src="/tailwindcss.js"></script>
     <link href="/font-awesome.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://npmcdn.com/flatpickr/dist/flatpickr.min.js"></script>
+    <script src="https://npmcdn.com/flatpickr/dist/l10n/zh.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -112,22 +115,19 @@
                     <h2 class="text-lg text-gray-800 flex items-center justify-around">
                         <span class="">起报时间选择</span>
                     </h2>
+                    <input id="myID" placeholder="搜索时间..." class="w-full p-2 border border-gray-300 rounded-md focus:outline-none"/>
                 </div>
 
                 <div class="space-y-2 overflow-y-auto max-h-[calc(100vh-100px)] scrollbar-hide pr-1">
-                    <div class="mb-3">
-                        <input type="text" id="timeSearch" placeholder="搜索时间..."
-                            class="w-full p-2 border border-gray-300 rounded-md focus:outline-none">
-                    </div>
                     <!-- 时间标签页 - 今天 -->
                     <div class="grid max-h-[calc(30vh)] grid-cols-1 gap-2 overflow-y-auto custom-scrollbar reportList">
-                        <% if (reportTimeList.length> 0) { %>
-                            <% reportTimeList.forEach(time=> { %>
+                        <% if (reportHourList.length> 0) { %>
+                            <% reportHourList.forEach(time=> { %>
                                 <button onclick="locationReload('report', this.value)"
-                                    class="time-option <%= time === defaultReportTime ? 'tab-active' : '' %> report border-b-2 border-gray-200 py-2 px-3 w-full flex flex-wrap justify-around text-center items-center"
+                                    class="time-option <%= time === currentReportTime.split(' ')[1] ? 'tab-active' : '' %> report border-b-2 border-gray-200 py-2 px-3 w-full flex flex-wrap justify-around text-center items-center"
                                     value="<%= time %>" data-time="<%= time %>"
                                 >
-                                    <%= time.slice(5) %>
+                                    <%= time %>
                                 </button>
                             <% }) %>
                         <% } else { %>
@@ -151,15 +151,15 @@
                     </div>
 
                     <div class="max-h-1/2 overflow-hidden shadow-card forcastList">
-                        <% if (Object.keys(reportForcastMap[defaultReportTime]).length> 0) { %>
-                            <% Object.keys(reportForcastMap[defaultReportTime]).forEach(forcast=> { %>
+                        <% if (forcastHourList[currentReportTime.split(' ')[1]].length> 0) { %>
+                            <% forcastHourList[currentReportTime.split(' ')[1]].forEach((forcast, index)=> { %>
                                 <button
                                     onclick="locationReload('forcast', this.value)"
-                                    class="<%= forcast === defaultReportTime ? 'tab-active' : '' %> forcast py-1 px-1 w-full flex flex-wrap justify-around  text-center items-center"
+                                    class="<%= index === 0 ? 'tab-active' : '' %> forcast py-1 px-1 w-full flex flex-wrap justify-around  text-center items-center"
                                     value="<%= forcast %>"
-                                    data-img="<%= reportForcastMap[defaultReportTime][forcast] %>"
+                                    data-img=""
                                 >
-                                    <div class="w-1/2"><%= forcast.slice(5) %></div>
+                                    <div class="w-1/2"><%= formatDate(currentReportTime.split(' ')[0] +' ' + forcast) %></div>
                                 </button>
                             <% }) %>
                         <% } else { %>
@@ -179,33 +179,57 @@
 
         <!-- 根据点击事件切换图片 -->
     <script>
-        function changeForcastAndReportTime(reportTime) {
-            const timeMap = <%- JSON.stringify(reportForcastMap) %>;
+        function formatDate(dateString, type) {
+            const date = new Date(dateString);
+            const year = date.getFullYear();
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return type ? `${year}${month}${day}${hours}${minutes}00` : `${month}-${day} ${hours}:${minutes}`;
+        }
+        function loadImg(src) {
+            const imgContent = document.querySelector('.img-content');
+            imgContent.src = src;
+        }
+        function changeForcastAndReportTime(reportHour) {
+            // 获取ejs变量forcastHourList
+            const forcastHourList = <%- JSON.stringify(forcastHourList || []) %>;
             document.querySelector('.tab-active.report').classList.remove('tab-active');
-            document.querySelector(`.report[value="${reportTime}"]`).classList.add('tab-active');
-            let forcastTimeList = timeMap[reportTime];
-            const defaultForcastTime = Object.keys(forcastTimeList)[0];
-            const imagePath = forcastTimeList[defaultForcastTime];
-            const forcastDiv = document.querySelector('.forcastList');
-            forcastDiv.innerHTML = '';
-            forcastDiv.innerHTML = Object.keys(forcastTimeList).map(forcast=> {
-                return `<button
-                            onclick="locationReload('forcast', this.value)"
-                            class="${forcast === defaultForcastTime ? 'tab-active' : '' } forcast py-1 px-1 w-full flex flex-wrap justify-around  text-center items-center"
-                            value="${forcast}"
-                        >
-                            <div class="w-1/2">${forcast.slice(5)}</div>
+            document.querySelector(`.report[value="${reportHour}"]`).classList.add('tab-active');
+            const date = document.querySelector('#myID').value;
+            const forcastListDiv = document.querySelector('.forcastList');
+            forcastListDiv.innerHTML = `
+                ${forcastHourList[reportHour].map((forcast, index)=> {
+                    return `<button
+                        onclick="locationReload('forcast', this.value)"
+                        class="${index === 0 ? 'tab-active' : '' } forcast py-1 px-1 w-full flex flex-wrap justify-around  text-center items-center"
+                        value="${forcast}"
+                        data-img=""
+                    >
+                        <div class="w-1/2"> ${formatDate(date+' ' +forcast)} </div>
                     </button>`
-            }).join('');
-            buttons = document.querySelectorAll('.forcast');
-            return imagePath;
+                }).join('')}
+            `
+            const reportTime = date + ' ' + reportHour;
+            const forcastTime = formatDate(date + ' ' + forcastHourList[reportHour][0], true);
+            
+            // 去掉日期中的所有符号和空格
+            const reportTimeReplace = reportTime.replace(/[^\d]/g, '');
+            const forcastTimeReplace = (forcastTime).replace(/[^\d]/g, '');
+            return `/pred/${reportTimeReplace}/${forcastTimeReplace}/mix.png`;
         }
 
-        function changeReportTime(reportTime, forcastTime) {
-            const timeMap = <%- JSON.stringify(reportForcastMap) %>;
+        function changeReportTime(reportHour, forcastHour) {
             document.querySelector('.tab-active.forcast').classList.remove('tab-active');
-            document.querySelector(`.forcast[value="${forcastTime}"]`).classList.add('tab-active');
-            return timeMap[reportTime][forcastTime];
+            document.querySelector(`.forcast[value="${forcastHour}"]`).classList.add('tab-active');
+            const date = document.querySelector('#myID').value;
+            const reportTime = date + ' ' + reportHour;
+            const forcastTime = formatDate(date + ' ' + forcastHour, true);
+            // 去掉日期中的所有符号和空格
+            const reportTimeReplace = reportTime.replace(/[^\d]/g, '');
+            const forcastTimeReplace = forcastTime.replace(/[^\d]/g, '');
+            return `/pred/${reportTimeReplace}/${forcastTimeReplace}/mix.png`;
         }
 
         function locationReload(type, value) {
@@ -223,33 +247,26 @@
     </script>
 
 
+<script>
+    const startDate = "<%= startDate %>"
+    flatpickr("#myID", {
+        locale: 'zh',
+        disable: [
+            function(date) {
+                return new Date(date).getTime() > new Date().getTime();
+            }
+        ],
+        defaultDate: startDate
+    });
+
+</script>
+
 
 <!-- 图片加载 -->
     <script>
-        function loadImg(src) {
-            const imgContent = document.querySelector('.img-content');
-            imgContent.src = document.querySelector(`.tab-active.forcast`).dataset.img ? document.querySelector(`.tab-active.forcast`).dataset.img : src;
-        }
         // 页面加载完成后加载初始图片
-        document.addEventListener('DOMContentLoaded', loadImg);
-    </script>
-
-    <!-- 搜索 -->
-    <script>
-        // 添加搜索过滤功能
-        document.getElementById('timeSearch').addEventListener('input', function (e) {
-            const searchTerm = e.target.value.toLowerCase();
-            const timeOptions = document.querySelectorAll('.time-option');
-
-            timeOptions.forEach(option => {
-                const timeText = option.getAttribute('data-time').toLowerCase();
-                const displayText = option.textContent.toLowerCase();
-                if (timeText.includes(searchTerm) || displayText.includes(searchTerm)) {
-                    option.style.display = '';
-                } else {
-                    option.style.display = 'none';
-                }
-            });
+        document.addEventListener('DOMContentLoaded', () => {
+            buttons[0].click();
         });
     </script>
 
