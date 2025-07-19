@@ -208,6 +208,11 @@ router.get('/:reportDate/:forcastDate', async (ctx) => {
         }).map(f => path.join(ECpath, f));
         
         logger.info(`筛选后的EC文件: ${ECFiles.join(', ')}`);
+        if (ECFiles.length === 0) {
+          ctx.status = 404;
+          ctx.body = { status: '原始数据获取失败' };
+          return;
+        }
         logger.info(`API 请求 - 数据路径: ${JSON.stringify({
           data_paths: ECFiles,
           data_type: "EC",
