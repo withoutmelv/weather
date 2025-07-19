@@ -5,14 +5,14 @@ services:
       - "80:80"
     volumes:
       - ./input:/app/input
-      - ./output:/app/output
+      - ./output_image:/app/output_image
       - ./logs:/app/logs
     environment:
       NODE_ENV: production
       STATIC_RESOURCE_PATH: public
-      IMAGE_PATH: output/pred
+      IMAGE_PATH: output_image
       LOG_PATH: logs
-      OUTPUT_DIR: output
+      OUTPUT_DIR: output_image
       MODEL_LIST: CMA-GFS,EC
       DEFAULT_MODEL: EC
       IMAGE_NAME: mix.png
@@ -30,8 +30,17 @@ services:
     image: api_app
     volumes:
       - ./input:/app/input
-      - ./output:/app/output
+      - ./output_image:/app/output_image
     ports:
-      - "5000:5000"
+      - "5001:5001"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 2
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
   

@@ -140,8 +140,8 @@ router.get('/', async (ctx) => {
 router.get('/:reportDate/:forcastDate', async (ctx) => {
   const { reportDate, forcastDate } = ctx.params;
   logger.info(`图片请求 - reportDate: ${reportDate}, forcastDate: ${forcastDate}`);
-  const imagePath = path.join(imageDataPath, reportDate, forcastDate, IMAGE_NAME);
-  const dirPath = path.join(imageDataPath, reportDate, forcastDate); // 添加目录路径
+  const imagePath = path.join(imageDataPath, reportDate, dayjs(forcastDate).format('YYYYMMDDHHmm'), IMAGE_NAME);
+  const dirPath = path.join(imageDataPath, reportDate, dayjs(forcastDate).format('YYYYMMDDHHmm')); // 添加目录路径
   const year = dayjs(reportDate).year() + '';
   const dateStr = dayjs(reportDate).format('YYYYMMDD');
   try {
@@ -196,7 +196,7 @@ router.get('/:reportDate/:forcastDate', async (ctx) => {
         output_dir: OUTPUT_DIR
       })}`);
       let localIP = getLocalIP();
-      axios.post(`http://${localIP}:${process.env.API_PORT}${process.env.API_URL}`, {
+      axios.post(`http://ly-api_app-1:${process.env.API_PORT}${process.env.API_URL}`, {
         data_paths: ECFiles,
         data_type: "EC",
         output_dir: OUTPUT_DIR
