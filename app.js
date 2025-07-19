@@ -20,11 +20,13 @@ const IMAGE_NAME = process.env.IMAGE_NAME;
 const INPUT_DIR = process.env.INPUT_DIR;
 const OUTPUT_DIR = process.env.OUTPUT_DIR;
 const START_DATE = process.env.START_DATE || dayjs().format('YYYY-MM-DD');
-let localIP = '127.0.0.1';
+const TIME_LEN = process.env.TIME_LEN;
+const TIME_GAP = process.env.TIME_GAP;
+const LOG_PATH = process.env.LOG_PATH;
 
 
 // 确保日志目录存在
-const logDir = path.join(__dirname, 'logs');
+const logDir = path.join(__dirname, LOG_PATH);
 if (!fs.access(logDir)) {
   fs.mkdir(logDir);
 }
@@ -69,6 +71,45 @@ app.use(views(path.join(__dirname, 'views'), {
   extension: 'ejs'
 }));
 
+
+function getPredictTime(reportDate) {
+  const reportHour = dayjs(reportDate).hour();
+  const hourList = [];
+  if (reportHour >= 12) {
+    for (let i =1; i <=TIME_LEN; i++) {
+      hourList.push(dayjs(reportDate).add(i * TIME_GAP, 'hour').format('MMDDHH00'));
+    }
+  } else {
+    for (let i =1; i <=TIME_LEN; i++) {
+      hourList.push(dayjs(reportDate).add(i * TIME_GAP, 'hour').format('MMDDHH00'));
+    }
+  }
+  logger.info(`hourLoist: ${hourList}`)
+  return hourList;
+}
+
+function formatDate(dateString) {
+  const date = new Date(dateString);
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${month}-${day} ${hours}:${minutes}`;
+}
+
+const getLocalIP = () => {
+  const interfaces = os.networkInterfaces();
+  for (const devName in interfaces) {
+    const iface = interfaces[devName];
+    for (const alias of iface) {
+      if (alias.family === 'IPv4' && alias.address !== '127.0.0.1' && !alias.internal) {
+        return alias.address;
+      }
+    }
+  }
+  return '127.0.0.1'; // 默认返回本地回环地址
+};
+
 // 默认路由 (显示最新时间的图片)
 router.get('/', async (ctx) => {
   logger.info('首页请求 - 用户访问主页');
@@ -83,15 +124,6 @@ router.get('/', async (ctx) => {
   const currentHour = new Date().getHours();
   const currentReportTime = dayjs(START_DATE).hour(currentHour >= 12 ? 12 : 0).minute(0).format('YYYY-MM-DD HH:mm');
 
-  function formatDate(dateString) {
-    const date = new Date(dateString);
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${month}-${day} ${hours}:${minutes}`;
-  }
-
   await ctx.render('index', {
     modelList: MODEL_LIST,
     defaultModel,
@@ -102,21 +134,6 @@ router.get('/', async (ctx) => {
     formatDate,
   });
 });
-
-function getPredictTime(reportDate) {
-  const reportHour = dayjs(reportDate).hour();
-  const hourList = [];
-  if (reportHour >= 12) {
-    for (let i =1; i <=4; i++) {
-      hourList.push(dayjs(reportDate).add(i * 3, 'hour').format('MMDDHH00'));
-    }
-  } else {
-    for (let i =1; i <=4; i++) {
-      hourList.push(dayjs(reportDate).add(i * 3, 'hour').format('MMDDHH00'));
-    }
-  }
-  return hourList;
-}
 
 
 // 添加图片请求处理路由
@@ -130,10 +147,10 @@ router.get('/:reportDate/:forcastDate', async (ctx) => {
   try {
     // 先检查目录是否存在
     await fs.access(dirPath, fs.constants.F_OK);
-    logger.debug(`目录存在: ${dirPath}`);
+    logger.info(`目录存在: ${dirPath}`);
     // 目录存在，读取目录内容
     const files = await fs.readdir(dirPath);
-    logger.debug(`目录内容: ${files.join(', ')}`);
+    logger.info(`目录内容: ${files.join(', ')}`);
     
     if (files.length === 0) {
       // 目录存在但无文件 - 模型预测中
@@ -163,20 +180,22 @@ router.get('/:reportDate/:forcastDate', async (ctx) => {
     }
   } catch (err) {
     const ECpath = path.join(__dirname, INPUT_DIR, year, dateStr);
-    logger.debug(`EC目录路径: ${ECpath}`);
+    logger.info(`EC目录路径: ${ECpath}`);
     try {
       let ECFiles = await fs.readdir(ECpath);
+      logger.info(`EC目录内容: ${ECFiles.join(', ')}`);
       ECFiles = ECFiles.filter(f => {
         const report2ForcastDate = (f.split('C1D')[1]).split('.')[0];
         const predictTimeList = getPredictTime(reportDate);
         return report2ForcastDate.slice(0, 8) === dayjs(reportDate).format('MMDDHH00') && predictTimeList.includes(report2ForcastDate.slice(8, 16));
       }).map(f => path.join(ECpath, f));
-      logger.debug(`筛选后的EC文件: ${ECFiles.join(', ')}`);
+      logger.info(`筛选后的EC文件: ${ECFiles.join(', ')}`);
       logger.info(`API 请求 - 数据路径: ${JSON.stringify({
         data_paths: ECFiles,
         data_type: "EC",
         output_dir: OUTPUT_DIR
       })}`);
+      let localIP = getLocalIP();
       axios.post(`http://${localIP}:${process.env.API_PORT}${process.env.API_URL}`, {
         data_paths: ECFiles,
         data_type: "EC",
@@ -201,20 +220,8 @@ router.get('/:reportDate/:forcastDate', async (ctx) => {
 // 应用路由
 app.use(router.routes()).use(router.allowedMethods());
 // 启动服务器
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 80;
 app.listen(PORT, () => {
-  const getLocalIP = () => {
-    const interfaces = os.networkInterfaces();
-    for (const devName in interfaces) {
-      const iface = interfaces[devName];
-      for (const alias of iface) {
-        if (alias.family === 'IPv4' && alias.address !== '127.0.0.1' && !alias.internal) {
-          return alias.address;
-        }
-      }
-    }
-    return '127.0.0.1'; // 默认返回本地回环地址
-  };
-  localIP = getLocalIP();
+  let localIP = getLocalIP();
   logger.info(`服务器启动成功 - http://${localIP}:${PORT}`);
 });

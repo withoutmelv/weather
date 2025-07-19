@@ -2,7 +2,7 @@ services:
   weather-app:
     image: weather
     ports:
-      - "3000:3000"
+      - "80:80"
     volumes:
       - ./input:/app/input
       - ./output:/app/output
@@ -11,6 +11,7 @@ services:
       NODE_ENV: production
       STATIC_RESOURCE_PATH: public
       IMAGE_PATH: output/pred
+      LOG_PATH: logs
       OUTPUT_DIR: output
       MODEL_LIST: CMA-GFS,EC
       DEFAULT_MODEL: EC
@@ -21,6 +22,9 @@ services:
       API_URL: /predict
       API_PORT: 5000
       INPUT_DIR: input
+      PORT: 80
+      TIME_LEN: 4
+      TIME_GAP: 3
 
   api_app:
     image: api_app

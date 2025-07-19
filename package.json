@@ -7,7 +7,7 @@
     "start": "nodemon app.js",
     "docker": "docker build -t weather .",
     "save": "docker save -o weather.tar weather",
-    "docker-run": "docker run -p 3000:3000 weather",
+    "docker-run": "docker run -p 80:80 weather",
     "docker-compose": "docker compose -f docker-compose.yaml up -d"
   },
   "keywords": [],

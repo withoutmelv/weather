@@ -13,8 +13,8 @@ RUN npm install --production
 # 复制项目文件
 COPY . .
 
-# 暴露端口（与 app.js 中的 3000 保持一致）
-EXPOSE 3000
+# 暴露端口（与 app.js 中的 80 保持一致）
+EXPOSE 80
 
 # 启动应用
 CMD ["node", "app.js"] 
