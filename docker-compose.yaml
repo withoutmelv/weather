@@ -20,7 +20,7 @@ services:
       FORCAST_AM_HOUR_LIST: 03:00,06:00,09:00,12:00
       FORCAST_PM_HOUR_LIST: 15:00,18:00,21:00,24:00
       API_URL: /predict
-      API_PORT: 5000
+      API_PORT: 5001
       INPUT_DIR: input
       PORT: 80
       TIME_LEN: 4

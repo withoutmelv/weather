@@ -196,6 +196,7 @@ router.get('/:reportDate/:forcastDate', async (ctx) => {
         output_dir: OUTPUT_DIR
       })}`);
       let localIP = getLocalIP();
+      logger.info(`API 请求 - 本地IP: ${localIP} 端口: ${process.env.API_PORT}`);
       axios.post(`http://ly-api_app-1:${process.env.API_PORT}${process.env.API_URL}`, {
         data_paths: ECFiles,
         data_type: "EC",
