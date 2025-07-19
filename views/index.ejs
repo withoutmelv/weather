@@ -115,10 +115,23 @@
 
         .loading-status {
             position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            transition: all 0.3s ease;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.3s ease;
+        }
+
+        .img-container {
+            position: relative;
+        }
+
+        .img-content {
+            transition: opacity 0.3s ease-out;
         }
     </style>
 </head>
@@ -290,7 +303,6 @@
 </script>
 
 
-<!-- 图片加载 -->
     <script>
     function loadImg(src) {
         // 清除可能存在的轮询定时器
@@ -301,45 +313,63 @@
 
         const imgContent = document.querySelector('.img-content');
         const statusElement = document.querySelector('.loading-status') || createStatusElement();
+        const imgContainer = imgContent.parentNode;
 
-        // 显示加载状态
-        statusElement.innerHTML = '<div class="spinner"></div> 正在请求图片资源...';
-        statusElement.className = 'loading-status text-center py-4 text-blue-600';
-        imgContent.style.display = 'none';
-        imgContent.src = '';
+        // 显示加载状态（覆盖在图片上方，不隐藏原有图片）
+        // statusElement.innerHTML = '<div class="spinner"></div> 正在请求图片资源...';
+        // statusElement.className = 'loading-status text-center py-4 text-blue-600';
+        // statusElement.style.display = 'block';
+
+        // 创建临时图片对象预加载
+        const tempImg = new Image();
 
         fetch(src)
             .then(response => {
                 if (response.status === 200) {
-                    // 文件存在，返回图片
                     return response.blob();
                 } else {
-                    // 解析错误状态信息
                     return response.json().then(data => {
                         throw new Error(data.status || '加载失败');
                     });
                 }
             })
             .then(blob => {
-                // 加载成功，清除轮询定时器
+                // 清除轮询定时器
                 if (window.pollInterval) {
                     clearInterval(window.pollInterval);
                     window.pollInterval = null;
                 }
 
-                imgContent.src = URL.createObjectURL(blob);
-                imgContent.style.display = 'block';
-                statusElement.style.display = 'none';
+                // 使用临时图片加载blob，确保完全加载后再显示
+                tempImg.onload = function() {
+                    // 添加淡入效果
+                    imgContent.style.opacity = '0';
+                    imgContent.style.transition = 'opacity 0.3s ease-out';
+
+                    // 图片加载完成后更新并显示
+                    setTimeout(() => {
+                        imgContent.src = URL.createObjectURL(blob);
+                        imgContent.style.display = 'block';
+                        imgContent.style.opacity = '1';
+                        statusElement.style.display = 'none';
+                    }, 300);
+                };
+                tempImg.src = URL.createObjectURL(blob);
             })
             .catch(error => {
+                // 仅在非"数据预测中"状态下才隐藏图片
+                if (error.message !== '数据预测中') {
+                    imgContent.style.display = 'none';
+                    imgContent.src = '';
+                }
+
                 // 显示错误状态
                 if (error.message === '数据预测中') {
                     statusElement.innerHTML = '<div class="spinner"></div> 模型预测中...';
                     statusElement.className = 'loading-status text-center py-4 text-blue-600';
 
-                    // 设置轮询，每10秒重试一次
+                    // 设置轮询
                     window.pollInterval = setInterval(() => {
-                        // 检查是否仍需要轮询（防止用户已切换时间块但定时器未清除）
                         if (document.querySelector('.loading-status') && 
                             document.querySelector('.loading-status').textContent.includes('模型预测中')) {
                             loadImg(src);
@@ -349,7 +379,6 @@
                         }
                     }, 50000);
                 } else {
-                    // 其他错误状态，清除轮询定时器
                     if (window.pollInterval) {
                         clearInterval(window.pollInterval);
                         window.pollInterval = null;
@@ -370,6 +399,17 @@
     function createStatusElement() {
         const statusElement = document.createElement('div');
         const imgContainer = document.querySelector('.img-content').parentNode;
+        // 设置状态元素样式使其覆盖在图片上方
+        statusElement.style.position = 'absolute';
+        statusElement.style.top = '0';
+        statusElement.style.left = '0';
+        statusElement.style.width = '100%';
+        statusElement.style.height = '100%';
+        statusElement.style.backgroundColor = 'rgba(255, 255, 255, 0.8)';
+        statusElement.style.display = 'flex';
+        statusElement.style.alignItems = 'center';
+        statusElement.style.justifyContent = 'center';
+        imgContainer.style.position = 'relative';
         imgContainer.appendChild(statusElement);
         return statusElement;
     }
@@ -403,7 +443,7 @@
             carouselInterval = setInterval(() => {
                 currentIndex = (currentIndex + 1) % buttons.length;
                 buttons[currentIndex].click();
-            }, 3000);
+            }, 1500);
             toggleBtn.innerHTML =  `
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 1536 1536"><!-- Icon from Font Awesome 4 by Dave Gandy - https://scripts.sil.org/cms/scripts/page.php?site_id=nrsi&id=OFL --><path fill="currentColor" d="M1536 64v1408q0 26-19 45t-45 19H960q-26 0-45-19t-19-45V64q0-26 19-45t45-19h512q26 0 45 19t19 45m-896 0v1408q0 26-19 45t-45 19H64q-26 0-45-19t-19-45V64q0-26 19-45T64 0h512q26 0 45 19t19 45"/></svg>
                 暂停

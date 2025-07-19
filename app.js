@@ -141,79 +141,102 @@ router.get('/:reportDate/:forcastDate', async (ctx) => {
   const { reportDate, forcastDate } = ctx.params;
   logger.info(`图片请求 - reportDate: ${reportDate}, forcastDate: ${forcastDate}`);
   const imagePath = path.join(imageDataPath, reportDate, dayjs(forcastDate).format('YYYYMMDDHHmm'), IMAGE_NAME);
-  const dirPath = path.join(imageDataPath, reportDate, dayjs(forcastDate).format('YYYYMMDDHHmm')); // 添加目录路径
+  const dirPath = path.join(imageDataPath, reportDate, dayjs(forcastDate).format('YYYYMMDDHHmm'));
   const year = dayjs(reportDate).year() + '';
   const dateStr = dayjs(reportDate).format('YYYYMMDD');
+  
   try {
-    // 先检查目录是否存在
-    await fs.access(dirPath, fs.constants.F_OK);
-    logger.info(`目录存在: ${dirPath}`);
-    // 目录存在，读取目录内容
-    const files = await fs.readdir(dirPath);
-    logger.info(`目录内容: ${files.join(', ')}`);
+    // 检查文件是否存在并获取状态
+    const stats = await fs.stat(imagePath);
     
-    if (files.length === 0) {
-      // 目录存在但无文件 - 模型预测中
-      ctx.status = 202;
-      ctx.body = { status: '数据预测中' };
+    // 设置缓存控制头
+    ctx.set('Cache-Control', 'public, max-age=3600'); // 缓存1小时
+    ctx.set('ETag', stats.mtime.getTime().toString()); // 使用文件修改时间作为ETag
+    
+    // 检查客户端缓存
+    if (ctx.request.headers['if-none-match'] === stats.mtime.getTime().toString()) {
+      ctx.status = 304; // 资源未修改
       return;
     }
-    // 目录存在且有文件，继续检查目标文件
-    await fs.access(imagePath);
+    
     // 文件存在，返回图片
-    try {
-      const data = await fs.readFile(imagePath);
-      const ext = path.extname(imagePath).toLowerCase();
-      const contentType = {
-        '.png': 'image/png',
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
-        '.gif': 'image/gif'
-      }[ext] || 'application/octet-stream';
+    const data = await fs.readFile(imagePath);
+    const ext = path.extname(imagePath).toLowerCase();
+    const contentType = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif'
+    }[ext] || 'application/octet-stream';
 
-      ctx.set('Content-Type', contentType);
-      ctx.body = data;
-    } catch (err) {
-      logger.error(`文件读取失败: ${err.message}`);
-      ctx.status = 500;
-      ctx.body = { status: '文件读取失败' };
-    }
+    ctx.set('Content-Type', contentType);
+    ctx.body = data;
   } catch (err) {
-    const ECpath = path.join(__dirname, INPUT_DIR, year, dateStr);
-    logger.info(`EC目录路径: ${ECpath}`);
+    // 文件不存在或其他错误
     try {
-      let ECFiles = await fs.readdir(ECpath);
-      logger.info(`EC目录内容: ${ECFiles.join(', ')}`);
-      ECFiles = ECFiles.filter(f => {
-        const report2ForcastDate = (f.split('C1D')[1]).split('.')[0];
-        const predictTimeList = getPredictTime(reportDate);
-        return report2ForcastDate.slice(0, 8) === dayjs(reportDate).format('MMDDHH00') && predictTimeList.includes(report2ForcastDate.slice(8, 16));
-      }).map(f => path.join(ECpath, f));
-      logger.info(`筛选后的EC文件: ${ECFiles.join(', ')}`);
-      logger.info(`API 请求 - 数据路径: ${JSON.stringify({
-        data_paths: ECFiles,
-        data_type: "EC",
-        output_dir: OUTPUT_DIR
-      })}`);
-      let localIP = getLocalIP();
-      logger.info(`API 请求 - 本地IP: ${localIP} 端口: ${process.env.API_PORT}`);
-      axios.post(`http://${process.env.API_HOST || localIP}:${process.env.API_PORT}${process.env.API_URL}`, {
-        data_paths: ECFiles,
-        data_type: "EC",
-        output_dir: OUTPUT_DIR
-      }).then(res => {
-        logger.info(`API 请求成功: ${res}`);
-      }).catch(err => {
-        logger.error('API 请求失败:', err);
-      });
-      // 目录不存在 - 无数据
-      ctx.status = 202;
-      ctx.body = { status: '数据预测中' };
-    } catch(err) {
-      logger.error(`原始数据处理失败: ${err.message}`);
-      // 目录不存在 - 无数据
+      // 检查目录是否存在
+      await fs.access(dirPath, fs.constants.F_OK);
+      logger.info(`目录存在: ${dirPath}`);
+      
+      // 目录存在，读取目录内容
+      const files = await fs.readdir(dirPath);
+      logger.info(`目录内容: ${files.join(', ')}`);
+      
+      if (files.length === 0) {
+        // 目录存在但无文件 - 模型预测中
+        ctx.status = 202;
+        ctx.set('Cache-Control', 'no-cache, no-store, must-revalidate'); // 禁止缓存未完成的请求
+        ctx.body = { status: '数据预测中' };
+        return;
+      }
+      
+      // 目录存在但目标文件不存在
       ctx.status = 404;
-      ctx.body = { status: '原始数据获取失败' };
+      ctx.body = { status: '图片不存在' };
+    } catch (err) {
+      const ECpath = path.join(__dirname, INPUT_DIR, year, dateStr);
+      logger.info(`EC目录路径: ${ECpath}`);
+      
+      try {
+        let ECFiles = await fs.readdir(ECpath);
+        logger.info(`EC目录内容: ${ECFiles.join(', ')}`);
+        
+        ECFiles = ECFiles.filter(f => {
+          const report2ForcastDate = (f.split('C1D')[1]).split('.')[0];
+          const predictTimeList = getPredictTime(reportDate);
+          return report2ForcastDate.slice(0, 8) === dayjs(reportDate).format('MMDDHH00') && predictTimeList.includes(report2ForcastDate.slice(8, 16));
+        }).map(f => path.join(ECpath, f));
+        
+        logger.info(`筛选后的EC文件: ${ECFiles.join(', ')}`);
+        logger.info(`API 请求 - 数据路径: ${JSON.stringify({
+          data_paths: ECFiles,
+          data_type: "EC",
+          output_dir: OUTPUT_DIR
+        })}`);
+        
+        let localIP = getLocalIP();
+        logger.info(`API 请求 - 本地IP: ${localIP} 端口: ${process.env.API_PORT}`);
+        
+        axios.post(`http://${process.env.API_HOST || localIP}:${process.env.API_PORT}${process.env.API_URL}`, {
+          data_paths: ECFiles,
+          data_type: "EC",
+          output_dir: OUTPUT_DIR
+        }).then(res => {
+          logger.info(`API 请求成功: ${res}`);
+        }).catch(err => {
+          logger.error('API 请求失败:', err);
+        });
+        
+        // 目录不存在 - 触发预测流程
+        ctx.status = 202;
+        ctx.set('Cache-Control', 'no-cache, no-store, must-revalidate'); // 禁止缓存未完成的请求
+        ctx.body = { status: '数据预测中' };
+      } catch(err) {
+        logger.error(`原始数据处理失败: ${err.message}`);
+        // 目录不存在 - 无数据
+        ctx.status = 404;
+        ctx.body = { status: '原始数据获取失败' };
+      }
     }
   }
 });
