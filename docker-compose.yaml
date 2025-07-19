@@ -21,6 +21,7 @@ services:
       FORCAST_PM_HOUR_LIST: 15:00,18:00,21:00,24:00
       API_URL: /predict
       API_PORT: 5001
+      API_HOST: ly-api_app-1
       INPUT_DIR: input
       PORT: 80
       TIME_LEN: 4
