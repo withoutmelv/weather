@@ -173,22 +173,34 @@ const scanMissingDir = async () => {
 
   // 根据缺失目录调用API接口
   for (let reportDate of missingDirList) {
+    console.log('reportDate', reportDate)
     try {
       const year = dayjs(reportDate).year() + '';
-      dateStr = dayjs(reportDate).format('YYYYMMDD');
-      const predictTimeList = getPredictTime(reportDate);
+      const reportDateStr = dayjs(reportDate).format('YYYYMMDD');
+      const hour = dayjs(reportDate).hour();
+      let predictTimeList = []
+      let scanStr = reportDateStr;
+      if (hour == 12) {
+        scanStr += '1200';
+        predictTimeList = getPredictTime(reportDateStr + '1200');
+      }
+      else {
+        scanStr += '0000';
+        predictTimeList = getPredictTime(reportDateStr + '0000');
+      }
+        
       
       // 构造EC文件路径
-      const ECpath = path.join(__dirname, INPUT_DIR, year, dateStr);
+      const ECpath = path.join(__dirname, INPUT_DIR, year, reportDateStr);
       logger.info(`EC目录路径: ${ECpath}`);
-      
+      logger.info(scanStr.slice(4))
       // 读取并筛选EC文件
       let ECFiles = await fs.readdir(ECpath);
-      
+      // const predictTimeList = getPredictTime(dateStr);
       ECFiles = ECFiles.filter(f => {
         const report2ForcastDate = (f.split('C1D')[1]).split('.')[0];
         
-        return report2ForcastDate.slice(0, 8) === dayjs(dateStr).format('MMDDHH00') && 
+        return report2ForcastDate.slice(0, 8) === scanStr.slice(4) && 
                predictTimeList.includes(report2ForcastDate.slice(8, 16));
       }).map(f => path.join(ECpath, f));
       
@@ -199,33 +211,22 @@ const scanMissingDir = async () => {
       
       // 调用API接口
       const localIP = getLocalIP();
-      logger.info(`API 请求 - 本地IP: ${localIP} 端口: ${process.env.API_PORT} ip: ${process.env.API_HOST}`);
+      logger.info(`API 请求 - 本地IP: ${localIP} 端口: ${process.env.API_PORT}`);
       try {
-        axios.post(`http://${process.env.API_HOST || localIP}:${process.env.API_PORT}${process.env.API_URL}`, {
-          data_paths: ECFiles,
-          data_type: "EC", 
-          output_dir: OUTPUT_DIR
-        }).then(res => {
-          logger.info(`API 请求成功: ${dateStr}`);
-        }).catch(err =>{
-          console.error(err)
-          logger.error(`API 请求失败: ${dateStr} ${JSON.stringify({
-            data_paths: ECFiles,
-            data_type: "EC",
-            output_dir: OUTPUT_DIR
-          })}`);
-        })
-      } catch(e) {
-        console.error(`其他错误`, e)
-        logger.error(`其他错误失败: ${dateStr} ${JSON.stringify({
+        await axios.post(`http://${process.env.API_HOST || localIP}:${process.env.API_PORT}${process.env.API_URL}`, {
           data_paths: ECFiles,
           data_type: "EC",
           output_dir: OUTPUT_DIR
-        })}`);
+        });
+      } catch(e) {
+        logger.error(`API 请求失败: ${reportDateStr} ${JSON.stringify({
+          data_paths: ECFiles,
+          data_type: "EC",
+          output_dir: OUTPUT_DIR
+        })}`, `${JSON.stringify(e)}`);
       }
-
     } catch (err) {
-      logger.error(`处理缺失目录 ${dateStr} 时出错:`, err);
+      logger.error(`处理缺失目录 ${reportDateStr} 时出错:`, err);
     }
   }
 };
@@ -305,57 +306,58 @@ router.get('/:reportDate/:forcastDate', async (ctx) => {
         year,
         dateStr,
       })}`, err);
-      const ECpath = path.join(__dirname, INPUT_DIR, year, dateStr);
-      logger.info(`EC目录路径: ${ECpath}`);
+      // const ECpath = path.join(__dirname, INPUT_DIR, year, dateStr);
+      // logger.info(`EC目录路径: ${ECpath}`);
       
-      try {
-        let ECFiles = await fs.readdir(ECpath);
-        const predictTimeList = getPredictTime(reportDate);
-        ECFiles = ECFiles.filter(f => {
-          const report2ForcastDate = (f.split('C1D')[1]).split('.')[0];
-          return report2ForcastDate.slice(0, 8) === dayjs(reportDate).format('MMDDHH00') && predictTimeList.includes(report2ForcastDate.slice(8, 16));
-        }).map(f => path.join(ECpath, f));
+      // try {
+      //   let ECFiles = await fs.readdir(ECpath);
+      //   const predictTimeList = getPredictTime(reportDate);
+      //   ECFiles = ECFiles.filter(f => {
+      //     const report2ForcastDate = (f.split('C1D')[1]).split('.')[0];
+          
+      //     return report2ForcastDate.slice(0, 8) === dayjs(reportDate).format('MMDDHH00') && predictTimeList.includes(report2ForcastDate.slice(8, 16));
+      //   }).map(f => path.join(ECpath, f));
         
-        logger.info(`筛选后的EC文件: ${ECFiles.join(', ')}`);
-        if (ECFiles.length === 0) {
-          ctx.status = 404;
-          ctx.body = { status: '原始数据获取失败' };
-          return;
-        }
-        logger.info(`API 请求 - 数据路径: ${JSON.stringify({
-          data_paths: ECFiles,
-          data_type: "EC",
-          output_dir: OUTPUT_DIR
-        })}`);
+      //   logger.info(`筛选后的EC文件: ${ECFiles.join(', ')}`);
+      //   if (ECFiles.length === 0) {
+      //     ctx.status = 404;
+      //     ctx.body = { status: '原始数据获取失败' };
+      //     return;
+      //   }
+      //   logger.info(`API 请求 - 数据路径: ${JSON.stringify({
+      //     data_paths: ECFiles,
+      //     data_type: "EC",
+      //     output_dir: OUTPUT_DIR
+      //   })}`);
         
-        let localIP = getLocalIP();
-        logger.info(`API 请求 - 本地IP: ${localIP} 端口: ${process.env.API_PORT}`);
+      //   let localIP = getLocalIP();
+      //   logger.info(`API 请求 - 本地IP: ${localIP} 端口: ${process.env.API_PORT}`);
         
-        axios.post(`http://${process.env.API_HOST || localIP}:${process.env.API_PORT}${process.env.API_URL}`, {
-          data_paths: ECFiles,
-          data_type: "EC",
-          output_dir: OUTPUT_DIR
-        }).then(res => {
-          logger.info(`API 请求成功: ${JSON.stringify(res)}`);
+      //   axios.post(`http://${process.env.API_HOST || localIP}:${process.env.API_PORT}${process.env.API_URL}`, {
+      //     data_paths: ECFiles,
+      //     data_type: "EC",
+      //     output_dir: OUTPUT_DIR
+      //   }).then(res => {
+      //     logger.info(`API 请求成功: ${JSON.stringify(res)}`);
 
-        }).catch(err => {
-          logger.error(`API 请求失败: ${JSON.stringify({
-            data_paths: ECFiles,
-            data_type: "EC",
-            output_dir: OUTPUT_DIR
-          })}`,`${JSON.stringify(res)}`, err);
-        });
+      //   }).catch(err => {
+      //     logger.error(`API 请求失败: ${JSON.stringify({
+      //       data_paths: ECFiles,
+      //       data_type: "EC",
+      //       output_dir: OUTPUT_DIR
+      //     })}`,`${JSON.stringify(res)}`, err);
+      //   });
         
-        // 目录不存在 - 触发预测流程
-        ctx.status = 202;
-        ctx.set('Cache-Control', 'no-cache, no-store, must-revalidate'); // 禁止缓存未完成的请求
-        ctx.body = { status: '数据预测中' };
-      } catch(err) {
-        logger.error(`原始数据处理失败: ${err.message}`);
-        // 目录不存在 - 无数据
-        ctx.status = 404;
-        ctx.body = { status: '原始数据获取失败' };
-      }
+      //   // 目录不存在 - 触发预测流程
+      //   ctx.status = 202;
+      //   ctx.set('Cache-Control', 'no-cache, no-store, must-revalidate'); // 禁止缓存未完成的请求
+      //   ctx.body = { status: '数据预测中' };
+      // } catch(err) {
+      //   logger.error(`原始数据处理失败: ${err.message}`);
+      //   // 目录不存在 - 无数据
+      //   ctx.status = 404;
+      //   ctx.body = { status: '原始数据获取失败' };
+      // }
     }
   }
 });
