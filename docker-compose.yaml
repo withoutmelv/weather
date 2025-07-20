@@ -1,6 +1,7 @@
 services:
   weather-app:
     image: weather
+    restart: unless-stopped
     ports:
       - "80:80"
     volumes:
@@ -29,6 +30,7 @@ services:
 
   api_app:
     image: api_app
+    restart: unless-stopped
     volumes:
       - ./input:/app/input
       - ./output_image:/app/output_image

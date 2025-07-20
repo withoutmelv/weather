@@ -10,6 +10,7 @@ const serve = require('koa-static'); // 引入静态文件服务中间件
 const os = require('os');
 const axios = require('axios');
 const winston = require('winston');
+const schedule = require('node-schedule');
 const {imageDataPath, staticResourcePath} = require('./config');
 
 
@@ -74,6 +75,7 @@ app.use(views(path.join(__dirname, 'views'), {
 
 function getPredictTime(reportDate) {
   const reportHour = dayjs(reportDate).hour();
+  console.log(reportHour, reportDate)
   const hourList = [];
   if (reportHour >= 12) {
     for (let i =1; i <=TIME_LEN; i++) {
@@ -135,6 +137,98 @@ router.get('/', async (ctx) => {
   });
 });
 
+// 根据当前时间 扫描output_image文件夹下缺失的近一个月的目录，并根据缺失的
+const scanMissingDir = async () => {
+  const currentDate = dayjs();
+  // 从一个月前的00:00开始，确保起始时间为整点
+  const startDate = currentDate.subtract(3, 'day').startOf('day').format('YYYYMMDDHHmm');
+  // 结束时间为当前日期的23:59，确保覆盖当天可能的12:00
+  const endDate = currentDate.endOf('day').format('YYYYMMDDHHmm');
+
+  const missingDirList = [];
+  // 使用dayjs对象进行日期比较，避免字符串比较问题
+  let current = dayjs(startDate, 'YYYYMMDDHHmm');
+  const end = dayjs(endDate, 'YYYYMMDDHHmm');
+
+  while (current.isBefore(end) || current.isSame(end)) {
+    // 只处理00点和12点的目录
+    const hour = current.hour();
+    if (hour === 0 || hour === 12) {
+      const dateStr = current.format('YYYYMMDDHHmm');
+      const dirPath = path.join(imageDataPath, dateStr);
+      try {
+        await fs.access(dirPath, fs.constants.F_OK);
+      } catch (err) {
+        missingDirList.push(dateStr);
+      }
+    }
+    // 每次增加12小时
+    current = current.add(12, 'hour');
+  }
+
+  logger.info(`缺失目录列表: ${missingDirList}`);
+
+  // missingDirList日期排序
+  missingDirList.sort((a, b) => dayjs(a).isBefore(dayjs(b)) ? 1 : -1);
+
+  // 根据缺失目录调用API接口
+  for (let reportDate of missingDirList) {
+    try {
+      const year = dayjs(reportDate).year() + '';
+      dateStr = dayjs(reportDate).format('YYYYMMDD');
+      const predictTimeList = getPredictTime(reportDate);
+      
+      // 构造EC文件路径
+      const ECpath = path.join(__dirname, INPUT_DIR, year, dateStr);
+      logger.info(`EC目录路径: ${ECpath}`);
+      
+      // 读取并筛选EC文件
+      let ECFiles = await fs.readdir(ECpath);
+      
+      ECFiles = ECFiles.filter(f => {
+        const report2ForcastDate = (f.split('C1D')[1]).split('.')[0];
+        
+        return report2ForcastDate.slice(0, 8) === dayjs(dateStr).format('MMDDHH00') && 
+               predictTimeList.includes(report2ForcastDate.slice(8, 16));
+      }).map(f => path.join(ECpath, f));
+      
+      if (ECFiles.length === 0) {
+        logger.warn(`没有找到符合条件的EC文件: ${ECpath}`);
+        continue;
+      }
+      
+      // 调用API接口
+      const localIP = getLocalIP();
+      logger.info(`API 请求 - 本地IP: ${localIP} 端口: ${process.env.API_PORT} ip: ${process.env.API_HOST}`);
+      try {
+        axios.post(`http://${process.env.API_HOST || localIP}:${process.env.API_PORT}${process.env.API_URL}`, {
+          data_paths: ECFiles,
+          data_type: "EC", 
+          output_dir: OUTPUT_DIR
+        }).then(res => {
+          logger.info(`API 请求成功: ${dateStr}`);
+        }).catch(err =>{
+          console.error(err)
+          logger.error(`API 请求失败: ${dateStr} ${JSON.stringify({
+            data_paths: ECFiles,
+            data_type: "EC",
+            output_dir: OUTPUT_DIR
+          })}`);
+        })
+      } catch(e) {
+        console.error(`其他错误`, e)
+        logger.error(`其他错误失败: ${dateStr} ${JSON.stringify({
+          data_paths: ECFiles,
+          data_type: "EC",
+          output_dir: OUTPUT_DIR
+        })}`);
+      }
+
+    } catch (err) {
+      logger.error(`处理缺失目录 ${dateStr} 时出错:`, err);
+    }
+  }
+};
 
 // 添加图片请求处理路由
 router.get('/:reportDate/:forcastDate', async (ctx) => {
@@ -172,6 +266,14 @@ router.get('/:reportDate/:forcastDate', async (ctx) => {
     ctx.set('Content-Type', contentType);
     ctx.body = data;
   } catch (err) {
+    logger.info(`图片资源不存在: ${reportDate} ${forcastDate} ${JSON.stringify({
+      reportDate,
+      forcastDate,
+      imagePath,
+      dirPath,
+      year,
+      dateStr,
+    })}`, err);
     // 文件不存在或其他错误
     try {
       // 检查目录是否存在
@@ -188,22 +290,29 @@ router.get('/:reportDate/:forcastDate', async (ctx) => {
         ctx.set('Cache-Control', 'no-cache, no-store, must-revalidate'); // 禁止缓存未完成的请求
         ctx.body = { status: '数据预测中' };
         return;
+      } else if (!files.includes(IMAGE_NAME)) {
+        // 目录存在但目标文件不存在
+        ctx.status = 404;
+        ctx.body = { status: '图片不存在' };
+        return;
       }
-      
-      // 目录存在但目标文件不存在
-      ctx.status = 404;
-      ctx.body = { status: '图片不存在' };
     } catch (err) {
+      logger.error(`目录不存在: ${dirPath} ${JSON.stringify({
+        reportDate,
+        forcastDate,
+        imagePath,
+        dirPath,
+        year,
+        dateStr,
+      })}`, err);
       const ECpath = path.join(__dirname, INPUT_DIR, year, dateStr);
       logger.info(`EC目录路径: ${ECpath}`);
       
       try {
         let ECFiles = await fs.readdir(ECpath);
-        logger.info(`EC目录内容: ${ECFiles.join(', ')}`);
-        
+        const predictTimeList = getPredictTime(reportDate);
         ECFiles = ECFiles.filter(f => {
           const report2ForcastDate = (f.split('C1D')[1]).split('.')[0];
-          const predictTimeList = getPredictTime(reportDate);
           return report2ForcastDate.slice(0, 8) === dayjs(reportDate).format('MMDDHH00') && predictTimeList.includes(report2ForcastDate.slice(8, 16));
         }).map(f => path.join(ECpath, f));
         
@@ -227,9 +336,14 @@ router.get('/:reportDate/:forcastDate', async (ctx) => {
           data_type: "EC",
           output_dir: OUTPUT_DIR
         }).then(res => {
-          logger.info(`API 请求成功: ${res}`);
+          logger.info(`API 请求成功: ${JSON.stringify(res)}`);
+
         }).catch(err => {
-          logger.error('API 请求失败:', err);
+          logger.error(`API 请求失败: ${JSON.stringify({
+            data_paths: ECFiles,
+            data_type: "EC",
+            output_dir: OUTPUT_DIR
+          })}`,`${JSON.stringify(res)}`, err);
         });
         
         // 目录不存在 - 触发预测流程
@@ -248,6 +362,21 @@ router.get('/:reportDate/:forcastDate', async (ctx) => {
 
 // 应用路由
 app.use(router.routes()).use(router.allowedMethods());
+
+try {
+  scanMissingDir();
+} catch (err) {
+  logger.error("scanMissingDir error:", err);
+}
+schedule.scheduleJob('* * * * *', async () => {
+  try {
+    logger.info('定时扫描任务开始执行');
+    await scanMissingDir();
+    logger.info('定时扫描任务执行完成');
+  } catch (error) {
+    logger.error('定时扫描任务执行失败:', error);
+  }
+});
 // 启动服务器
 const PORT = process.env.PORT || 80;
 app.listen(PORT, () => {
