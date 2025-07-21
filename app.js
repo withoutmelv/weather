@@ -23,6 +23,10 @@ const OUTPUT_DIR = process.env.OUTPUT_DIR;
 const TIME_LEN = process.env.TIME_LEN;
 const TIME_GAP = process.env.TIME_GAP;
 const LOG_PATH = process.env.LOG_PATH;
+const IMAGEMAP = {
+  'EC': '',
+  'CMA': 'CMA',
+}
 
 
 // 确保日志目录存在
@@ -122,7 +126,7 @@ router.get('/index', async (ctx) => {
 // 默认路由 (显示最新时间的图片)
 router.get('/cloudPredict', async (ctx) => {
   logger.info('首页请求 - 用户访问主页');
-  const START_DATE = process.env.START_DATE || dayjs().subtract(1, 'day').format('YYYY-MM-DD');
+  let START_DATE = process.env.START_DATE || dayjs().subtract(1, 'day').format('YYYY-MM-DD');
   const defaultModel = DEFAULT_MODEL;
   const reportHourList = process.env.REPORT_HOUR_LIST.split(',');
   const forcastAmHourList = process.env.FORCAST_AM_HOUR_LIST.split(',');
@@ -131,9 +135,26 @@ router.get('/cloudPredict', async (ctx) => {
   forcastHourList[reportHourList[0]] = forcastAmHourList;
   forcastHourList[reportHourList[1]] = forcastPmHourList;
 
-  const currentHour = new Date().getHours();
-  const currentReportTime = dayjs(START_DATE).hour(currentHour >= 12 ? 12 : 0).minute(0).format('YYYY-MM-DD HH:mm');
+  let currentHour = new Date().getHours();
+  let currentReportTime = dayjs(START_DATE).hour(currentHour >= 12 ? 12 : 0).minute(0).format('YYYY-MM-DD HH:mm');
+  const dirPath = path.join(imageDataPath+IMAGEMAP[defaultModel]);
 
+  try {
+    const dirList = await fs.readdir(dirPath);
+    logger.info(`目录列表: ${dirList}`);
+    dirList.sort((a, b) => dayjs(a).isBefore(dayjs(b)) ? 1 : -1);
+    logger.info(`目录列表: ${dirList}`);
+    if (!dirList.length) {throw new Error('目录列表为空')}
+    currentHour = dayjs(dirList[0]).hour();
+    currentReportTime = dayjs(dirList[0]).format('YYYY-MM-DD HH:mm');
+    START_DATE = dayjs(dirList[0]).format('YYYY-MM-DD') || dayjs().format('YYYY-MM-DD');
+  } catch (err) {
+    logger.error(`读取目录失败: ${dirPath}`);
+    START_DATE = dayjs().format('YYYY-MM-DD');
+    currentHour = new Date().getHours();
+    currentReportTime = dayjs(START_DATE).hour(currentHour >= 12 ? 12 : 0).minute(0).format('YYYY-MM-DD HH:mm');
+  }
+    console.log(forcastHourList, currentReportTime)
   await ctx.render('index', {
     modelList: MODEL_LIST,
     defaultModel,
@@ -146,7 +167,7 @@ router.get('/cloudPredict', async (ctx) => {
 });
 
 // 根据当前时间 扫描output_image文件夹下缺失的近一个月的目录，并根据缺失的
-const scanMissingDir = async () => {
+const scanMissingDir = async (model) => {
   const currentDate = dayjs();
   // 从一个月前的00:00开始，确保起始时间为整点
   const startDate = currentDate.subtract(3, 'day').startOf('day').format('YYYYMMDDHHmm');
@@ -163,7 +184,7 @@ const scanMissingDir = async () => {
     const hour = current.hour();
     if (hour === 0 || hour === 12) {
       const dateStr = current.format('YYYYMMDDHHmm');
-      const dirPath = path.join(imageDataPath, dateStr);
+      const dirPath = path.join(imageDataPath+IMAGEMAP[model], dateStr);
       try {
         await fs.access(dirPath, fs.constants.F_OK);
       } catch (err) {
@@ -199,38 +220,56 @@ const scanMissingDir = async () => {
         
       
       // 构造EC文件路径
-      const ECpath = path.join(__dirname, INPUT_DIR, year, reportDateStr);
-      logger.info(`EC目录路径: ${ECpath}`);
-      logger.info(scanStr.slice(4))
+      const ECpath = path.join(__dirname, INPUT_DIR + IMAGEMAP[model], year, reportDateStr);
+      logger.info(`${model}目录路径: ${ECpath}`);
+      logger.info(scanStr.slice(4), predictTimeList)
       // 读取并筛选EC文件
       let ECFiles = await fs.readdir(ECpath);
       // const predictTimeList = getPredictTime(dateStr);
       ECFiles = ECFiles.filter(f => {
-        const report2ForcastDate = (f.split('C1D')[1]).split('.')[0];
-        
-        return report2ForcastDate.slice(0, 8) === scanStr.slice(4) && 
-               predictTimeList.includes(report2ForcastDate.slice(8, 16));
+        if (model === 'EC') {
+          const report2ForcastDate = (f.split('C1D')[1]).split('.')[0];
+          return report2ForcastDate.slice(0, 8) === scanStr.slice(4) && 
+                 predictTimeList.includes(report2ForcastDate.slice(8, 16));   
+        } else {
+          const cmaReportTime = f.slice(14, 26);
+          const cmaForcastHour = f.split('-GFS-GLB-')[1].split('.')[0];
+          return cmaReportTime === scanStr &&
+                 predictTimeList.map(h => '0' + h.slice(4)).includes(cmaForcastHour);
+        }
       }).map(f => path.join(ECpath, f));
       
       if (ECFiles.length === 0) {
-        logger.warn(`没有找到符合条件的EC文件: ${ECpath}`);
+        logger.warn(`没有找到符合条件的${model}文件: ${ECpath}`);
         continue;
       }
-      
+
+      if (ECFiles.length < TIME_LEN) {
+        logger.warn(`${model}文件数量不足${TIME_LEN}个: ${ECFiles.join(',')}`);
+        continue;
+      }
+      logger.info(`${model}文件: ${ECFiles.join(',')}`);
       // 调用API接口
       const localIP = getLocalIP();
       logger.info(`API 请求 - 本地IP: ${localIP} 端口: ${process.env.API_PORT}`);
       try {
         await axios.post(`http://${process.env.API_HOST || localIP}:${process.env.API_PORT}${process.env.API_URL}`, {
           data_paths: ECFiles,
-          data_type: "EC",
-          output_dir: OUTPUT_DIR
+          data_type: model,
+          output_dir: OUTPUT_DIR+IMAGEMAP[model],
         });
+        logger.info(`API 请求成功: ${reportDateStr} ${JSON.stringify({
+          data_paths: ECFiles,
+          data_type: model,
+          output_dir: OUTPUT_DIR+IMAGEMAP[model],
+
+        })}`);
       } catch(e) {
         logger.error(`API 请求失败: ${reportDateStr} ${JSON.stringify({
           data_paths: ECFiles,
-          data_type: "EC",
-          output_dir: OUTPUT_DIR
+          data_type: model,
+          output_dir: OUTPUT_DIR+IMAGEMAP[model],
+
         })}`, `${JSON.stringify(e)}`);
       }
     } catch (err) {
@@ -240,11 +279,11 @@ const scanMissingDir = async () => {
 };
 
 // 添加图片请求处理路由
-router.get('/picture/:reportDate/:forcastDate', async (ctx) => {
-  const { reportDate, forcastDate } = ctx.params;
-  logger.info(`图片请求 - reportDate: ${reportDate}, forcastDate: ${forcastDate}`);
-  const imagePath = path.join(imageDataPath, reportDate, dayjs(forcastDate).format('YYYYMMDDHHmm'), IMAGE_NAME);
-  const dirPath = path.join(imageDataPath, reportDate, dayjs(forcastDate).format('YYYYMMDDHHmm'));
+router.get('/picture/:model/:reportDate/:forcastDate', async (ctx) => {
+  const { model, reportDate, forcastDate } = ctx.params;
+  logger.info(`图片请求 - model: ${model}, reportDate: ${reportDate}, forcastDate: ${forcastDate}`);
+  const imagePath = path.join(imageDataPath + IMAGEMAP[model], reportDate, dayjs(forcastDate).format('YYYYMMDDHHmm'), IMAGE_NAME);
+  const dirPath = path.join(imageDataPath + IMAGEMAP[model], reportDate, dayjs(forcastDate).format('YYYYMMDDHHmm'));
   const year = dayjs(reportDate).year() + '';
   const dateStr = dayjs(reportDate).format('YYYYMMDD');
   
@@ -374,14 +413,18 @@ router.get('/picture/:reportDate/:forcastDate', async (ctx) => {
 app.use(router.routes()).use(router.allowedMethods());
 
 try {
-  scanMissingDir();
+  for (let model of MODEL_LIST) {
+    scanMissingDir(model);
+  }
 } catch (err) {
   logger.error("scanMissingDir error:", err);
 }
 schedule.scheduleJob('* * * * *', async () => {  
   try {
     logger.info('定时扫描任务开始执行');
-    await scanMissingDir();
+    for (let model of MODEL_LIST) {
+      await scanMissingDir(model);
+    }
     logger.info('定时扫描任务执行完成');
   } catch (error) {
     logger.error('定时扫描任务执行失败:', error);

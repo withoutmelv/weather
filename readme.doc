@@ -1,0 +1,64 @@
+天气应用启动与检查操作手册
+一、日常检查项
+1. 容器状态检查
+bash
+运行
+# 检查所有服务状态docker-compose ps# 查看服务日志（weather-app）docker-compose logs weather-app# 查看服务日志（api_app）docker-compose logs api_app# 实时查看日志（添加-f参数）docker-compose logs -f weather-app
+2. 系统资源检查
+bash
+运行
+# 检查容器资源占用docker stats# 检查GPU使用情况（针对api_app）nvidia-smi
+3. 端口占用检查
+bash
+运行
+# 检查80端口（weather-app）netstat -ano | findstr :80# 检查5001端口（api_app）netstat -ano | findstr :5001
+4. 数据卷检查
+bash
+运行
+# 检查输入目录ls -la ./input# 检查输出图像目录ls -la ./output_image# 检查日志目录ls -la ./logs
+二、应用启动步骤
+1. 首次启动
+bash
+运行
+# 进入项目目录cd c:\Users\lvyi\Desktop\work\weather# 启动所有服务 docker-compose up -d# 确认服务状态 docker-compose ps
+2. 启动验证
+访问Web界面: http://localhost
+检查API连接: http://localhost:5001/predict (应返回API响应)
+查看日志确认无错误: docker-compose logs weather-app
+三、应用重启步骤
+1. 重启单个服务
+bash
+运行
+# 重启weather-app docker-compose restart weather-app# 重启api_app docker-compose restart api_app
+2. 重启所有服务
+bash
+运行
+# 停止所有服务 docker-compose down# 启动所有服务 docker-compose up -d
+3. 强制重启（解决资源占用问题）
+bash
+运行
+# 停止并删除容器（保留数据卷） docker-compose down# 清理未使用的资源 docker system prune -f# 重新启动 docker-compose up -d
+四、故障处理流程
+1. Web界面无法访问
+检查weather-app状态: docker-compose logs weather-app
+确认80端口未被占用
+重启服务: docker-compose restart weather-app
+如仍无法访问，查看详细日志: docker-compose logs weather-app --tail=100
+2. API服务无响应
+检查api_app状态: docker-compose logs api_app
+确认GPU资源是否可用: nvidia-smi
+重启API服务: docker-compose restart api_app
+如涉及GPU问题，可能需要重启服务器
+3. 数据文件问题
+检查卷挂载: docker volume inspect weather_output_image
+确认权限设置: ls -la ./input ./output_image
+重启服务使配置生效: docker-compose restart weather-app
+五、服务器重启后恢复流程
+登录服务器
+进入项目目录: cd c:\Users\lvyi\Desktop\work\weather
+启动所有服务: docker-compose up -d
+执行状态检查: docker-compose ps
+确认服务正常运行: 访问http://localhost
+六、紧急联系方式
+技术支持: [请填写联系人信息]
+系统管理员: [请填写联系人信息]

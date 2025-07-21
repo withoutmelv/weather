@@ -6,7 +6,8 @@ services:
       - "80:80"
     volumes:
       - ./input:/app/input
-      - ./output_image:/app/output_image
+      - ./output_image/ec:/app/output_image
+      - ./output_image/cma:/app/output_imageCMA
       - ./logs:/app/logs
     environment:
       NODE_ENV: production
@@ -14,7 +15,7 @@ services:
       IMAGE_PATH: output_image
       LOG_PATH: logs
       OUTPUT_DIR: output_image
-      MODEL_LIST: CMA-GFS,EC
+      MODEL_LIST: CMA,EC
       DEFAULT_MODEL: EC
       IMAGE_NAME: mix.png
       REPORT_HOUR_LIST: 00:00,12:00
@@ -33,7 +34,8 @@ services:
     restart: unless-stopped
     volumes:
       - ./input:/app/input
-      - ./output_image:/app/output_image
+      - ./output_image/ec:/app/output_image
+      - ./output_image/cma:/app/output_imageCMA
     ports:
       - "5001:5001"
     deploy:

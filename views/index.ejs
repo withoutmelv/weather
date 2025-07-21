@@ -142,9 +142,9 @@
             <!-- 左侧时间选择栏 -->
             <div class="w-48 lg:w-48 rounded-xl p-2">
                 <div class="flex items-center mb-4">
-                    <div class="border border-gray-300 rounded w-full flex">
+                    <div class="border border-gray-300 rounded w-full flex modelList">
                         <% for(let model of modelList) { %>
-                            <button class="tab-btn w-1/2 <%= defaultModel === model ? 'active border-primary bg-blue-500 text-white shadow-sm' : 'border-primary text-gray-500 hover:bg-gray-50 hover:text-gray-700' %> px-2 py-1 text-center font-bold text-base transition-all duration-200" value=<%= model %> style="font-size: 12px;"><%= model %></button>
+                            <button class="tab-btn w-1/2 <%= defaultModel === model ? 'tab-active border-primary shadow-sm' : 'border-primary text-gray-500' %> model px-2 py-1 text-center font-bold text-base transition-all duration-200" value=<%= model %> onclick="locationReload('model', this.value)" style="font-size: 12px;"><%= model %></button>
                         <% } %>
                     </div>
                 </div>
@@ -225,8 +225,23 @@
             const minutes = String(date.getMinutes()).padStart(2, '0');
             return type ? `${year}${month}${day}${hours}${minutes}00` : `${month}-${day} ${hours}:${minutes}`;
         }
+
+        function changeModel(model) {
+            // return model;
+            document.querySelector('.tab-active.model').classList.remove('tab-active');
+            document.querySelector(`.model[value="${model}"]`).classList.add('tab-active');
+            const date = document.querySelector('#myID').value;
+            const reportHour = document.querySelector('.tab-active.report')?.value
+            const forcastHour = document.querySelector('.tab-active.forcast')?.value
+            const reportTime = date + ' ' + reportHour;
+            const forcastTime = formatDate(date + ' ' + forcastHour, true);
+            // 去掉日期中的所有符号和空格
+            const reportTimeReplace = reportTime.replace(/[^\d]/g, '');
+            const forcastTimeReplace = forcastTime.replace(/[^\d]/g, '');
+            return `${model}/${reportTimeReplace}/${forcastTimeReplace}`;
+        }
         
-        function changeForcastAndReportTime(reportHour) {
+        function changeForcastAndReportTime(model, reportHour) {
             // 获取ejs变量forcastHourList
             const forcastHourList = <%- JSON.stringify(forcastHourList || []) %>;
             document.querySelector('.tab-active.report').classList.remove('tab-active');
@@ -253,10 +268,10 @@
             const reportTimeReplace = reportTime.replace(/[^\d]/g, '');
             const forcastTimeReplace = (forcastTime).replace(/[^\d]/g, '');
             buttons = document.querySelectorAll('.forcast');
-            return `${reportTimeReplace}/${forcastTimeReplace}`;
+            return `${model}/${reportTimeReplace}/${forcastTimeReplace}`;
         }
 
-        function changeReportTime(reportHour, forcastHour) {
+        function changeReportTime(model, reportHour, forcastHour) {
             document.querySelector('.tab-active.forcast').classList.remove('tab-active');
             document.querySelector(`.forcast[value="${forcastHour}"]`).classList.add('tab-active');
             const date = document.querySelector('#myID').value;
@@ -265,18 +280,19 @@
             // 去掉日期中的所有符号和空格
             const reportTimeReplace = reportTime.replace(/[^\d]/g, '');
             const forcastTimeReplace = forcastTime.replace(/[^\d]/g, '');
-            return `${reportTimeReplace}/${forcastTimeReplace}`;
+            return `${model}/${reportTimeReplace}/${forcastTimeReplace}`;
         }
 
         function locationReload(type, value) {
             switch(type) {
                 case 'model':
+                    loadImg(changeModel(value))
                     break;
                 case 'report':
-                    loadImg(changeForcastAndReportTime(value));
+                    loadImg(changeForcastAndReportTime(document.querySelector('.tab-active.model')?.value,value));
                     break;
                 case 'forcast':
-                    loadImg(changeReportTime(document.querySelector('.tab-active.report')?.value, value));
+                    loadImg(changeReportTime(document.querySelector('.tab-active.model')?.value, document.querySelector('.tab-active.report')?.value, value));
                     break;
             }
         }
@@ -296,7 +312,7 @@
         ],
         defaultDate: startDate,
         onChange: (selectedDates, dateStr, instance) => {
-            loadImg(changeForcastAndReportTime(document.querySelector('.tab-active.report')?.value));
+            loadImg(changeForcastAndReportTime(document.querySelector('.tab-active.model')?.value,document.querySelector('.tab-active.report')?.value));
         }
     });
 
