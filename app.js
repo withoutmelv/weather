@@ -235,7 +235,7 @@ const scanMissingDir = async (model) => {
           const cmaReportTime = f.slice(14, 26);
           const cmaForcastHour = f.split('-GFS-GLB-')[1].split('.')[0];
           return cmaReportTime === scanStr &&
-                 predictTimeList.map(h => '0' + h.slice(4)).includes(cmaForcastHour);
+                 predictTimeList.map(h => h.slice(4) == '0000' ? '02400' : '0' + h.slice(4)).includes(cmaForcastHour);
         }
       }).map(f => path.join(ECpath, f));
       
@@ -269,8 +269,7 @@ const scanMissingDir = async (model) => {
           data_paths: ECFiles,
           data_type: model,
           output_dir: OUTPUT_DIR+IMAGEMAP[model],
-
-        })}`, `${JSON.stringify(e)}`);
+        })}`, e);
       }
     } catch (err) {
       logger.error(`处理缺失目录时出错:`, err);
@@ -413,13 +412,12 @@ router.get('/picture/:model/:reportDate/:forcastDate', async (ctx) => {
 app.use(router.routes()).use(router.allowedMethods());
 
 try {
-  for (let model of MODEL_LIST) {
-    scanMissingDir(model);
-  }
+    scanMissingDir(MODEL_LIST[1]);
+    scanMissingDir(MODEL_LIST[0]);
 } catch (err) {
   logger.error("scanMissingDir error:", err);
 }
-schedule.scheduleJob('* * * * *', async () => {  
+schedule.scheduleJob('0 * * * *', async () => {  
   try {
     logger.info('定时扫描任务开始执行');
     for (let model of MODEL_LIST) {
