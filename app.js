@@ -20,7 +20,6 @@ const DEFAULT_MODEL = process.env.DEFAULT_MODEL;
 const IMAGE_NAME = process.env.IMAGE_NAME;
 const INPUT_DIR = process.env.INPUT_DIR;
 const OUTPUT_DIR = process.env.OUTPUT_DIR;
-const START_DATE = process.env.START_DATE || dayjs().format('YYYY-MM-DD');
 const TIME_LEN = process.env.TIME_LEN;
 const TIME_GAP = process.env.TIME_GAP;
 const LOG_PATH = process.env.LOG_PATH;
@@ -112,9 +111,18 @@ const getLocalIP = () => {
   return '127.0.0.1'; // 默认返回本地回环地址
 };
 
-// 默认路由 (显示最新时间的图片)
 router.get('/', async (ctx) => {
+  ctx.redirect('/cloudPredict');
+})
+
+router.get('/index', async (ctx) => {
+  ctx.redirect('/cloudPredict');
+})
+
+// 默认路由 (显示最新时间的图片)
+router.get('/cloudPredict', async (ctx) => {
   logger.info('首页请求 - 用户访问主页');
+  const START_DATE = process.env.START_DATE || dayjs().subtract(1, 'day').format('YYYY-MM-DD');
   const defaultModel = DEFAULT_MODEL;
   const reportHourList = process.env.REPORT_HOUR_LIST.split(',');
   const forcastAmHourList = process.env.FORCAST_AM_HOUR_LIST.split(',');
@@ -226,13 +234,13 @@ const scanMissingDir = async () => {
         })}`, `${JSON.stringify(e)}`);
       }
     } catch (err) {
-      logger.error(`处理缺失目录 ${reportDateStr} 时出错:`, err);
+      logger.error(`处理缺失目录时出错:`, err);
     }
   }
 };
 
 // 添加图片请求处理路由
-router.get('/:reportDate/:forcastDate', async (ctx) => {
+router.get('/picture/:reportDate/:forcastDate', async (ctx) => {
   const { reportDate, forcastDate } = ctx.params;
   logger.info(`图片请求 - reportDate: ${reportDate}, forcastDate: ${forcastDate}`);
   const imagePath = path.join(imageDataPath, reportDate, dayjs(forcastDate).format('YYYYMMDDHHmm'), IMAGE_NAME);
@@ -370,7 +378,7 @@ try {
 } catch (err) {
   logger.error("scanMissingDir error:", err);
 }
-schedule.scheduleJob('* * * * *', async () => {
+schedule.scheduleJob('* * * * *', async () => {  
   try {
     logger.info('定时扫描任务开始执行');
     await scanMissingDir();

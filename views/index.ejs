@@ -323,8 +323,26 @@
         // 创建临时图片对象预加载
         const tempImg = new Image();
 
-        fetch(src)
+        // 声明当前请求控制器变量
+        if (window.currentImageRequest) {
+            // 取消上一次未完成的请求
+            window.currentImageRequest.abort();
+            window.currentImageRequest = null;
+            // 清除临时图片URL，避免内存泄漏
+            if (window.tempImageUrl) {
+                URL.revokeObjectURL(window.tempImageUrl);
+                window.tempImageUrl = null;
+            }
+        }
+
+        // 创建新的请求控制器
+        const abortController = new AbortController();
+        window.currentImageRequest = abortController;
+
+        fetch('picture/' + src, { signal: abortController.signal })
             .then(response => {
+                // 请求成功后清除当前请求标识
+                window.currentImageRequest = null;
                 if (response.status === 200) {
                     return response.blob();
                 } else {
@@ -340,6 +358,12 @@
                     window.pollInterval = null;
                 }
 
+                // 清除之前的临时URL
+                if (window.tempImageUrl) {
+                    URL.revokeObjectURL(window.tempImageUrl);
+                }
+                window.tempImageUrl = URL.createObjectURL(blob);
+
                 // 使用临时图片加载blob，确保完全加载后再显示
                 tempImg.onload = function() {
                     // 添加淡入效果
@@ -348,17 +372,18 @@
 
                     // 图片加载完成后更新并显示
                     setTimeout(() => {
-                        imgContent.src = URL.createObjectURL(blob);
+                        imgContent.src = window.tempImageUrl;
                         imgContent.style.display = 'block';
                         imgContent.style.opacity = '1';
                         statusElement.style.display = 'none';
                     }, 300);
                 };
-                tempImg.src = URL.createObjectURL(blob);
+                tempImg.src = window.tempImageUrl;
             })
             .catch(error => {
-                // 仅在非"数据预测中"状态下才隐藏图片
-                if (error.message !== '数据预测中') {
+                // 请求被取消时不显示错误
+                if (error.name !== 'AbortError') {
+                    // 仅在非"数据预测中"状态下才隐藏图片
                     imgContent.style.display = 'none';
                     imgContent.src = '';
                 }
