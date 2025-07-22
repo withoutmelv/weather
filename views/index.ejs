@@ -5,11 +5,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI云检测误差分析系统</title>
-    <script src="/tailwindcss.js"></script>
-    <link href="/font-awesome.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="/flatpickr.min.css">
-    <script src="/flatpickr.min.js"></script>
-    <script src="/zh.js"></script>
+    <script src="<%= basePath %>/tailwindcss.js"></script>
+    <link href="<%= basePath %>/font-awesome.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="<%= basePath %>/flatpickr.min.css">
+    <script src="<%= basePath %>/flatpickr.min.js"></script>
+    <script src="<%= basePath %>/zh.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -139,16 +139,17 @@
 <body class="font-inter bg-gray-50 min-h-screen">
     <div class="max-w-12xl">
         <div class="flex">
+            <div class="w-[27%] lg:w-[27%] rounded-xl p-2"></div>
             <!-- 左侧时间选择栏 -->
-            <div class="w-48 lg:w-48 rounded-xl p-2">
-                <div class="flex items-center mb-4">
-                    <div class="border border-gray-300 rounded w-full flex modelList">
+            <div class="w-50 lg:w-50 p-0 max-h-screen overflow-y-auto">
+                <div class="flex items-center mb-2">
+                    <div class="border border-gray-300 w-full flex modelList">
                         <% for(let model of modelList) { %>
                             <button class="tab-btn w-1/2 <%= defaultModel === model ? 'tab-active border-primary shadow-sm' : 'border-primary text-gray-500' %> model px-2 py-1 text-center font-bold text-base transition-all duration-200" value=<%= model %> onclick="locationReload('model', this.value)" style="font-size: 12px;"><%= model %></button>
                         <% } %>
                     </div>
                 </div>
-                <div class="mb-2">
+                <div class="">
                     <h2 class="text-lg text-gray-800 flex items-center justify-around">
                         <span class="">起报时间选择</span>
                     </h2>
@@ -161,7 +162,7 @@
                         <% if (reportHourList.length> 0) { %>
                             <% reportHourList.forEach(time=> { %>
                                 <button onclick="locationReload('report', this.value)"
-                                    class="time-option <%= time === currentReportTime.split(' ')[1] ? 'tab-active' : '' %> report border-b-2 border-gray-200 py-2 px-3 w-full flex flex-wrap justify-around text-center items-center"
+                                    class="time-option <%= time === currentReportTime.split(' ')[1] ? 'tab-active' : '' %> report border-b-2 border-gray-200 py-1 px-2 w-full flex flex-wrap justify-around text-center items-center"
                                     value="<%= time %>" data-time="<%= time %>"
                                 >
                                     <%= time %>
@@ -173,7 +174,7 @@
                     </div>
                 </div>
 
-                <div class="mt-4">
+                <div class="mt-2">
                     <h2 class="text-lg text-gray-800 flex items-center justify-around">
                         <span class="">预报时间</span>
                         
@@ -187,16 +188,16 @@
                         </button>
                     </div>
 
-                    <div class="max-h-1/2 overflow-hidden shadow-card forcastList">
+                    <div class="max-h-[calc(70vh)] overflow-scroll shadow-card forcastList">
                         <% if (forcastHourList[currentReportTime.split(' ')[1]].length> 0) { %>
                             <% forcastHourList[currentReportTime.split(' ')[1]].forEach((forcast, index)=> { %>
                                 <button
                                     onclick="locationReload('forcast', this.value)"
-                                    class="<%= index === 0 ? 'tab-active' : '' %> forcast py-1 px-1 w-full flex flex-wrap justify-around  text-center items-center"
+                                    class="<%= index === 0 ? 'tab-active' : '' %> forcast py-2 px-2 w-full flex flex-wrap justify-around  text-center items-center"
                                     value="<%= forcast %>"
                                     data-img=""
                                 >
-                                    <div class="w-1/2"><%= formatDate(currentReportTime.split(' ')[0] +' ' + forcast) %></div>
+                                    <div class=""><%= forcast.slice(5) %></div>
                                 </button>
                             <% }) %>
                         <% } else { %>
@@ -216,25 +217,76 @@
 
         <!-- 根据点击事件切换图片 -->
     <script>
-        function formatDate(dateString, type) {
-            const date = new Date(dateString);
-            const year = date.getFullYear();
-            const day = String(date.getDate()).padStart(2, '0');
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const hours = String(date.getHours()).padStart(2, '0');
-            const minutes = String(date.getMinutes()).padStart(2, '0');
-            return type ? `${year}${month}${day}${hours}${minutes}00` : `${month}-${day} ${hours}:${minutes}`;
-        }
+        function generateHourList(model, date) {
+            // 将模板变量转换为数字类型
+            const TIME_LEN = parseInt("<%= TIME_LEN %>", 10);
+            const TIME_GAP = parseInt("<%= TIME_GAP %>", 10);
+            const ECReportHourList = ("<%= ECReportHourList %>").split(',');
+            const CMAReportHourList = ("<%= CMAReportHourList %>").split(',');
+            const reportHourList = model === 'EC' ? ECReportHourList : CMAReportHourList;
+   
+            const forcastHourList = {};
+            
+            // 遍历reportHourList中的每个时间点生成对应的预报时间序列
+            reportHourList.forEach(reportHour => {
+                const timeParts = reportHour.split(':');
+                const reportHourNum = parseInt(timeParts[0], 10);
+                const reportMinuteNum = parseInt(timeParts[1] || '0', 10);
+                
+                // 创建当前起报时间的基础日期对象
+                const baseReportDate = new Date(date);
+                baseReportDate.setHours(reportHourNum, reportMinuteNum, 0, 0);
+                
+                // 生成该起报时间对应的预报时间序列
+                const forcastTimes = [];
+                for (let i = 1; i <= TIME_LEN; i++) {
+                    const addHours = i * TIME_GAP;
+                    const forecastDate = new Date(baseReportDate);
+                    forecastDate.setHours(forecastDate.getHours() + addHours);
+                    forcastTimes.push(formatDate(forecastDate));
+                }
+                
+                // 将生成的时间序列添加到结果对象
+                forcastHourList[reportHour] = forcastTimes;
+            });
+            
+            return forcastHourList;
 
+            // 日期格式化辅助函数 (替代dayjs.format)
+            function formatDate(date) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                return `${year}-${month}-${day} ${hours}:${minutes}`;
+            }
+        }
         function changeModel(model) {
-            // return model;
             document.querySelector('.tab-active.model').classList.remove('tab-active');
             document.querySelector(`.model[value="${model}"]`).classList.add('tab-active');
             const date = document.querySelector('#myID').value;
-            const reportHour = document.querySelector('.tab-active.report')?.value
+            const reportListDiv = document.querySelector('.reportList');
+            const ECReportHourList = ("<%= ECReportHourList %>").split(',');
+            const CMAReportHourList = ("<%= CMAReportHourList %>").split(',');
+            const reportHourList = model === 'EC' ? ECReportHourList : CMAReportHourList;
+            reportListDiv.innerHTML = `
+                ${reportHourList.map((report, index)=> {
+                    return `<button
+                        onclick="locationReload('report', this.value)"
+                        class="${index === 0 ? 'tab-active' : '' } time-option report border-b-2 border-gray-200 py-1 px-2 w-full flex flex-wrap justify-around text-center items-center"
+                        value="${report}"
+                        data-img=""
+                    >
+                        <div class="w-1/2"> ${report} </div>
+                    </button>`
+                }).join('')}
+            `
+            const reportHour = reportHourList[0];
+            changeForcastAndReportTime(model, reportHour);
             const forcastHour = document.querySelector('.tab-active.forcast')?.value
             const reportTime = date + ' ' + reportHour;
-            const forcastTime = formatDate(date + ' ' + forcastHour, true);
+            const forcastTime = forcastHour;
             // 去掉日期中的所有符号和空格
             const reportTimeReplace = reportTime.replace(/[^\d]/g, '');
             const forcastTimeReplace = forcastTime.replace(/[^\d]/g, '');
@@ -243,26 +295,26 @@
         
         function changeForcastAndReportTime(model, reportHour) {
             // 获取ejs变量forcastHourList
-            const forcastHourList = <%- JSON.stringify(forcastHourList || []) %>;
             document.querySelector('.tab-active.report').classList.remove('tab-active');
             document.querySelector(`.report[value="${reportHour}"]`).classList.add('tab-active');
             const date = document.querySelector('#myID').value;
-            console.log(date)
+            const forcastHourList = generateHourList(model, date);
+            console.log(forcastHourList)
             const forcastListDiv = document.querySelector('.forcastList');
             forcastListDiv.innerHTML = `
                 ${forcastHourList[reportHour].map((forcast, index)=> {
                     return `<button
                         onclick="locationReload('forcast', this.value)"
-                        class="${index === 0 ? 'tab-active' : '' } forcast py-1 px-1 w-full flex flex-wrap justify-around  text-center items-center"
+                        class="${index === 0 ? 'tab-active' : '' } forcast py-2 px-2 w-full flex flex-wrap justify-around  text-center items-center"
                         value="${forcast}"
                         data-img=""
                     >
-                        <div class="w-1/2"> ${formatDate(date+' ' +forcast)} </div>
+                        <div> ${forcast.slice(5)} </div>
                     </button>`
                 }).join('')}
             `
             const reportTime = date + ' ' + reportHour;
-            const forcastTime = formatDate(date + ' ' + forcastHourList[reportHour][0], true);
+            const forcastTime = forcastHourList[reportHour][0];
             
             // 去掉日期中的所有符号和空格
             const reportTimeReplace = reportTime.replace(/[^\d]/g, '');
@@ -276,7 +328,7 @@
             document.querySelector(`.forcast[value="${forcastHour}"]`).classList.add('tab-active');
             const date = document.querySelector('#myID').value;
             const reportTime = date + ' ' + reportHour;
-            const forcastTime = formatDate(date + ' ' + forcastHour, true);
+            const forcastTime = forcastHour;
             // 去掉日期中的所有符号和空格
             const reportTimeReplace = reportTime.replace(/[^\d]/g, '');
             const forcastTimeReplace = forcastTime.replace(/[^\d]/g, '');
@@ -354,8 +406,8 @@
         // 创建新的请求控制器
         const abortController = new AbortController();
         window.currentImageRequest = abortController;
-
-        fetch('picture/' + src, { signal: abortController.signal })
+        const basePath = "<%= basePath %>"
+        fetch(basePath + '/picture/' + src, { signal: abortController.signal })
             .then(response => {
                 // 请求成功后清除当前请求标识
                 window.currentImageRequest = null;
