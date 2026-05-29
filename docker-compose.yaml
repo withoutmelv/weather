@@ -12,7 +12,6 @@ services:
     environment:
       NODE_ENV: production
       STATIC_RESOURCE_PATH: public
-      IMAGE_PATH: output_image
       LOG_PATH: logs
       OUTPUT_DIR: output_image
       MODEL_LIST: CMA,EC

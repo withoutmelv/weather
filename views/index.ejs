@@ -123,7 +123,6 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: opacity 0.3s ease;
         }
 
         .img-container {
@@ -131,7 +130,6 @@
         }
 
         .img-content {
-            transition: opacity 0.3s ease-out;
         }
     </style>
 </head>
@@ -299,7 +297,6 @@
             document.querySelector(`.report[value="${reportHour}"]`).classList.add('tab-active');
             const date = document.querySelector('#myID').value;
             const forcastHourList = generateHourList(model, date);
-            console.log(forcastHourList)
             const forcastListDiv = document.querySelector('.forcastList');
             forcastListDiv.innerHTML = `
                 ${forcastHourList[reportHour].map((forcast, index)=> {
@@ -372,21 +369,49 @@
 
 
     <script>
+        const cacheList = new Set();
+        function getImgUrlList(src) {
+            const params = src.split('/');
+            const model = params[params.length - 3];
+            const reportTime = params[params.length - 2];
+            const forcastTime = params[params.length - 1];
+            const imgUrlList = [];
+            const date = document.querySelector('#myID').value;
+            const forcastHourList = generateHourList(model, date);
+            const reportHour = reportTime.slice(8,10) + ':' + reportTime.slice(10,12);
+            let hourList = forcastHourList[reportHour];
+            hourList = hourList.map((hour) => {
+                hour = hour.replaceAll(' ', '');
+                hour = hour.replaceAll(':', '');
+                hour = hour.replaceAll('-', '');
+                return hour;
+            })
+            hourList.forEach((hour) => {
+                console.log(hour)
+                imgUrlList.push(`${model}/${reportTime}/${hour}`);
+            })
+            return imgUrlList;
+        }
     function loadImg(src) {
+        const basePath = "<%= basePath %>"
         // 清除可能存在的轮询定时器
         if (window.pollInterval) {
             clearInterval(window.pollInterval);
             window.pollInterval = null;
         }
-
+        
+        const imgList = getImgUrlList(src);
+        imgList.forEach((img) => {
+            if (cacheList.has(img)) {
+                return;
+            }
+            cacheList.add(img);
+            fetch(basePath + '/picture/' + img)
+        })
         const imgContent = document.querySelector('.img-content');
-        const statusElement = document.querySelector('.loading-status') || createStatusElement();
         const imgContainer = imgContent.parentNode;
-
-        // 显示加载状态（覆盖在图片上方，不隐藏原有图片）
-        // statusElement.innerHTML = '<div class="spinner"></div> 正在请求图片资源...';
-        // statusElement.className = 'loading-status text-center py-4 text-blue-600';
-        // statusElement.style.display = 'block';
+        const statusElement = document.querySelector('.loading-status') || createStatusElement();
+        statusElement.style.display = 'none';
 
         // 创建临时图片对象预加载
         const tempImg = new Image();
@@ -406,7 +431,6 @@
         // 创建新的请求控制器
         const abortController = new AbortController();
         window.currentImageRequest = abortController;
-        const basePath = "<%= basePath %>"
         fetch(basePath + '/picture/' + src, { signal: abortController.signal })
             .then(response => {
                 // 请求成功后清除当前请求标识
@@ -427,34 +451,34 @@
                 }
 
                 // 清除之前的临时URL
-                if (window.tempImageUrl) {
-                    URL.revokeObjectURL(window.tempImageUrl);
-                }
+                // if (window.tempImageUrl) {
+                //     URL.revokeObjectURL(window.tempImageUrl);
+                // }
                 window.tempImageUrl = URL.createObjectURL(blob);
 
                 // 使用临时图片加载blob，确保完全加载后再显示
-                tempImg.onload = function() {
-                    // 添加淡入效果
-                    imgContent.style.opacity = '0';
-                    imgContent.style.transition = 'opacity 0.3s ease-out';
-
-                    // 图片加载完成后更新并显示
-                    setTimeout(() => {
-                        imgContent.src = window.tempImageUrl;
-                        imgContent.style.display = 'block';
-                        imgContent.style.opacity = '1';
-                        statusElement.style.display = 'none';
-                    }, 300);
-                };
-                tempImg.src = window.tempImageUrl;
+                // tempImg.onload = function() {
+                //     // 隐藏状态元素
+                //     statusElement.style.display = 'none';
+                //     // 显示图片并设置源
+                //     imgContent.style.display = 'block';
+                //     imgContent.src = window.tempImageUrl;
+                // };
+                statusElement.style.display = 'none';
+                imgContent.style.display = 'block';
+                imgContent.src = window.tempImageUrl;
             })
             .catch(error => {
                 // 请求被取消时不显示错误
                 if (error.name !== 'AbortError') {
                     // 仅在非"数据预测中"状态下才隐藏图片
-                    imgContent.style.display = 'none';
-                    imgContent.src = '';
+                    if (error.message !== '数据预测中') {
+                        imgContent.style.display = 'none';
+                        imgContent.src = '';
+                    }
                 }
+                
+                
 
                 // 显示错误状态
                 if (error.message === '数据预测中') {
@@ -518,7 +542,6 @@
     let isPlaying = false; // 新增状态变量
     let buttons = document.querySelectorAll('.forcast');
     const toggleBtn = document.getElementById('toggleBtn');
-
     toggleBtn.addEventListener('click', () => {
         if (buttons.length === 0) return;
 
