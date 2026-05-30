@@ -1,4 +1,5 @@
 output_image
+output_imageCMA
 
 *.tar
 
@@ -7,3 +8,12 @@ node_modules
 input
 
 logs
+
+data/
+
+.codegraph/
+.codex/
+.agents/
+.trellis/
+.playwright-mcp/
+AGENTS.md

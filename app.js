@@ -20,6 +20,9 @@ const LOG_PATH = process.env.LOG_PATH;
 const TIME_LEN = process.env.TIME_LEN;
 const TIME_GAP = process.env.TIME_GAP;
 const basePath = process.env.BASE_PATH;
+const TITLE_STORE_PATH = process.env.TITLE_STORE_PATH || 'data/title-overrides.json';
+const titleStorePath = path.resolve(__dirname, TITLE_STORE_PATH);
+const TITLE_MAX_LENGTH = 120;
 
 const IMAGEMAP = {
   'EC': '',
@@ -103,6 +106,110 @@ function generateHourList(date, reportHourList) {
 
 }
 
+function getFallbackReportTime(date) {
+  const fallbackDate = date || dayjs().format('YYYY-MM-DD');
+  const currentHour = new Date().getHours();
+  return dayjs(fallbackDate).hour(currentHour >= 12 ? 12 : 0).minute(0).format('YYYY-MM-DD HH:mm');
+}
+
+async function getLatestReportTime(model) {
+  if (!Object.prototype.hasOwnProperty.call(IMAGEMAP, model)) {
+    return null;
+  }
+
+  const dirPath = path.join(imageDataPath + IMAGEMAP[model]);
+  try {
+    const dirList = await fs.readdir(dirPath);
+    const reportDirList = dirList.filter((dirName) => isCompactTimestamp(dirName));
+    reportDirList.sort((a, b) => a < b ? 1 : -1);
+    if (!reportDirList.length) {
+      throw new Error('目录列表为空');
+    }
+    logger.info(`${model} 最新目录: ${reportDirList[0]}`);
+    return dayjs(reportDirList[0]).format('YYYY-MM-DD HH:mm');
+  } catch (err) {
+    logger.error(`读取${model}目录失败: ${dirPath}`);
+    return null;
+  }
+}
+
+function isValidModel(model) {
+  return MODEL_LIST.includes(model) && Object.prototype.hasOwnProperty.call(IMAGEMAP, model);
+}
+
+function isCompactTimestamp(value) {
+  const text = String(value);
+  const match = text.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/);
+  if (!match) {
+    return false;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const date = new Date(Date.UTC(year, month - 1, day, hour, minute));
+  return date.getUTCFullYear() === year
+    && date.getUTCMonth() === month - 1
+    && date.getUTCDate() === day
+    && date.getUTCHours() === hour
+    && date.getUTCMinutes() === minute;
+}
+
+function validateImageRouteParams(model, reportDate, forcastDate) {
+  return isValidModel(model) && isCompactTimestamp(reportDate) && isCompactTimestamp(forcastDate);
+}
+
+function getTitleKey(model, reportDate, forcastDate) {
+  return `${model}/${reportDate}/${forcastDate}`;
+}
+
+async function readTitleStore() {
+  try {
+    const content = await fs.readFile(titleStorePath, 'utf8');
+    const store = JSON.parse(content);
+    return store && typeof store === 'object' && !Array.isArray(store) ? store : {};
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      return {};
+    }
+    logger.error(`读取标题配置失败: ${titleStorePath} ${err.message}`);
+    throw err;
+  }
+}
+
+async function writeTitleStore(store) {
+  await fs.mkdir(path.dirname(titleStorePath), { recursive: true });
+  await fs.writeFile(titleStorePath, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
+}
+
+function readRequestText(ctx, maxBytes) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    let size = 0;
+
+    ctx.req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > maxBytes) {
+        reject(new Error('请求体过大'));
+        ctx.req.destroy();
+        return;
+      }
+      body += chunk;
+    });
+    ctx.req.on('end', () => resolve(body));
+    ctx.req.on('error', reject);
+  });
+}
+
+async function readJsonBody(ctx) {
+  const body = await readRequestText(ctx, 1024 * 1024);
+  if (!body) {
+    return {};
+  }
+  return JSON.parse(body);
+}
+
 router.get('/', async (ctx) => {
   ctx.redirect(basePath);
 })
@@ -115,28 +222,18 @@ router.get(basePath, async (ctx) => {
   const ECReportHourList = process.env.EC_REPORT_HOUR_LIST.split(',');
   const CMAReportHourList = process.env.CMA_REPORT_HOUR_LIST.split(',');
 
-  let currentHour = new Date().getHours();
-  let currentReportTime = dayjs(START_DATE).hour(currentHour >= 12 ? 12 : 0).minute(0).format('YYYY-MM-DD HH:mm');
-  const dirPath = path.join(imageDataPath+IMAGEMAP[defaultModel]);
+  let currentReportTime = getFallbackReportTime(START_DATE);
 
-  try {
-    const dirList = await fs.readdir(dirPath);
-    logger.info(`目录列表: ${dirList}`);
-    dirList.sort((a, b) => dayjs(a).isBefore(dayjs(b)) ? 1 : -1);
-    logger.info(`目录列表: ${dirList}`);
-    if (!dirList.length) {throw new Error('目录列表为空')}
-    currentHour = dayjs(dirList[0]).hour();
-    currentReportTime = dayjs(dirList[0]).format('YYYY-MM-DD HH:mm');
-    START_DATE = dayjs(dirList[0]).format('YYYY-MM-DD') || dayjs().format('YYYY-MM-DD');
-  } catch (err) {
-    logger.error(`读取目录失败: ${dirPath}`);
+  const latestReportTime = await getLatestReportTime(defaultModel);
+  if (latestReportTime) {
+    currentReportTime = latestReportTime;
+    START_DATE = dayjs(latestReportTime).format('YYYY-MM-DD') || dayjs().format('YYYY-MM-DD');
+  } else {
     START_DATE = dayjs().format('YYYY-MM-DD');
-    currentHour = new Date().getHours();
-    currentReportTime = dayjs(START_DATE).hour(currentHour >= 12 ? 12 : 0).minute(0).format('YYYY-MM-DD HH:mm');
+    currentReportTime = getFallbackReportTime(START_DATE);
   }
   const reportHourList = defaultModel === 'EC' ? ECReportHourList : CMAReportHourList
   const forcastHourList = generateHourList(START_DATE, reportHourList);
-  console.log(forcastHourList)
 
   await ctx.render('index', {
     modelList: MODEL_LIST,
@@ -153,29 +250,148 @@ router.get(basePath, async (ctx) => {
   });
 });
 
-// 添加图片请求处理路由
-router.get(basePath+'/picture/:model/:reportDate/:forcastDate', async (ctx) => { 
+router.get(basePath+'/latest/:model', async (ctx) => {
+  const { model } = ctx.params;
+  if (!isValidModel(model)) {
+    ctx.status = 400;
+    ctx.body = { status: '模型不存在' };
+    return;
+  }
+
+  const latestReportTime = await getLatestReportTime(model);
+  const currentReportTime = latestReportTime || getFallbackReportTime();
+
+  ctx.body = {
+    model,
+    currentReportTime,
+    startDate: dayjs(currentReportTime).format('YYYY-MM-DD'),
+    isFallback: !latestReportTime,
+  };
+});
+
+router.get(basePath+'/title/:model/:reportDate/:forcastDate', async (ctx) => {
   const { model, reportDate, forcastDate } = ctx.params;
+  if (!validateImageRouteParams(model, reportDate, forcastDate)) {
+    ctx.status = 400;
+    ctx.body = { status: '参数错误' };
+    return;
+  }
+
+  try {
+    const store = await readTitleStore();
+    const titleRecord = store[getTitleKey(model, reportDate, forcastDate)];
+    ctx.body = {
+      title: titleRecord?.title || '',
+      isCustom: Boolean(titleRecord?.title),
+      updatedAt: titleRecord?.updatedAt || '',
+    };
+  } catch (err) {
+    ctx.status = 500;
+    ctx.body = { status: '标题读取失败' };
+  }
+});
+
+router.post(basePath+'/title/:model/:reportDate/:forcastDate', async (ctx) => {
+  const { model, reportDate, forcastDate } = ctx.params;
+  if (!validateImageRouteParams(model, reportDate, forcastDate)) {
+    ctx.status = 400;
+    ctx.body = { status: '参数错误' };
+    return;
+  }
+
+  let payload;
+  try {
+    payload = await readJsonBody(ctx);
+  } catch (err) {
+    ctx.status = err.message === '请求体过大' ? 413 : 400;
+    ctx.body = { status: err.message === '请求体过大' ? '请求体过大' : 'JSON格式错误' };
+    return;
+  }
+
+  const rawTitle = payload && typeof payload === 'object' ? payload.title : '';
+  const title = String(rawTitle || '').trim();
+  if (title.length > TITLE_MAX_LENGTH) {
+    ctx.status = 400;
+    ctx.body = { status: `标题长度不能超过${TITLE_MAX_LENGTH}个字符` };
+    return;
+  }
+
+  try {
+    const store = await readTitleStore();
+    const titleKey = getTitleKey(model, reportDate, forcastDate);
+    if (title) {
+      const updatedAt = dayjs().format('YYYY-MM-DD HH:mm:ss');
+      store[titleKey] = {
+        title,
+        updatedAt,
+      };
+    } else {
+      delete store[titleKey];
+    }
+    await writeTitleStore(store);
+    ctx.body = {
+      title,
+      isCustom: Boolean(title),
+      updatedAt: store[titleKey]?.updatedAt || '',
+    };
+  } catch (err) {
+    logger.error(`保存标题配置失败: ${titleStorePath} ${err.message}`);
+    ctx.status = 500;
+    ctx.body = { status: '标题保存失败' };
+  }
+});
+
+router.delete(basePath+'/title/:model/:reportDate/:forcastDate', async (ctx) => {
+  const { model, reportDate, forcastDate } = ctx.params;
+  if (!validateImageRouteParams(model, reportDate, forcastDate)) {
+    ctx.status = 400;
+    ctx.body = { status: '参数错误' };
+    return;
+  }
+
+  try {
+    const store = await readTitleStore();
+    delete store[getTitleKey(model, reportDate, forcastDate)];
+    await writeTitleStore(store);
+    ctx.body = {
+      title: '',
+      isCustom: false,
+    };
+  } catch (err) {
+    logger.error(`删除标题配置失败: ${titleStorePath} ${err.message}`);
+    ctx.status = 500;
+    ctx.body = { status: '标题删除失败' };
+  }
+});
+
+// 添加图片请求处理路由
+router.get(basePath+'/picture/:model/:reportDate/:forcastDate', async (ctx) => {
+  const { model, reportDate, forcastDate } = ctx.params;
+  if (!validateImageRouteParams(model, reportDate, forcastDate)) {
+    ctx.status = 400;
+    ctx.body = { status: '参数错误' };
+    return;
+  }
   logger.info(`图片请求 - model: ${model}, reportDate: ${reportDate}, forcastDate: ${forcastDate}`);
   const imagePath = path.join(imageDataPath + IMAGEMAP[model], reportDate, dayjs(forcastDate).format('YYYYMMDDHHmm'), IMAGE_NAME);
   const dirPath = path.join(imageDataPath + IMAGEMAP[model], reportDate, dayjs(forcastDate).format('YYYYMMDDHHmm'));
   const year = dayjs(reportDate).year() + '';
   const dateStr = dayjs(reportDate).format('YYYYMMDD');
-  
+
   try {
     // 检查文件是否存在并获取状态
     const stats = await fs.stat(imagePath);
-    
+
     // 设置缓存控制头
     ctx.set('Cache-Control', 'public, max-age=3600'); // 缓存1小时
     ctx.set('ETag', stats.mtime.getTime().toString()); // 使用文件修改时间作为ETag
-    
+
     // 检查客户端缓存
     if (ctx.request.headers['if-none-match'] === stats.mtime.getTime().toString()) {
       ctx.status = 304; // 资源未修改
       return;
     }
-    
+
     // 文件存在，返回图片
     const data = await fs.readFile(imagePath);
     const ext = path.extname(imagePath).toLowerCase();
@@ -202,11 +418,11 @@ router.get(basePath+'/picture/:model/:reportDate/:forcastDate', async (ctx) => {
       // 检查目录是否存在
       await fs.access(dirPath, fs.constants.F_OK);
       logger.info(`目录存在: ${dirPath}`);
-      
+
       // 目录存在，读取目录内容
       const files = await fs.readdir(dirPath);
       logger.info(`目录内容: ${files.join(', ')}`);
-      
+
       if (files.length === 0) {
         // 目录存在但无文件 - 模型预测中
         ctx.status = 202;

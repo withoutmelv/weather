@@ -1,50 +1,34 @@
 services:
-  weather-app:
-    image: weather
+  web-app:
+    image: web-app
     restart: unless-stopped
+    #   network_mode: "host"
     ports:
       - "80:80"
     volumes:
-      - ./input:/app/input
-      - ./output_image/ec:/app/output_image
-      - ./output_image/cma:/app/output_imageCMA
+      - /SATLAKE/EXTDATA/DATASHARE/NAFP/ECMWF/HRES:/app/input
+      - /data/ices/model_image/ec:/app/output_image
       - ./logs:/app/logs
+      - ./data:/app/data
+      - /etc/localtime:/etc/localtime:ro
+      - /data/ices/temp:/app/temp
+      - /SATLAKE/EXTDATA/CMADAAS/DATA/NAFP/NMC/GRAPES-GFS-GLB:/app/inputCMA
+      - /data/ices/model_image/cma:/app/output_imageCMA
     environment:
       NODE_ENV: production
       STATIC_RESOURCE_PATH: public
+      IMAGE_PATH: output_image
       LOG_PATH: logs
+      TITLE_STORE_PATH: data/title-overrides.json
       OUTPUT_DIR: output_image
       MODEL_LIST: CMA,EC
       DEFAULT_MODEL: EC
       IMAGE_NAME: mix.png
-      REPORT_HOUR_LIST: 00:00,12:00
-      FORCAST_AM_HOUR_LIST: 03:00,06:00,09:00,12:00
-      FORCAST_PM_HOUR_LIST: 15:00,18:00,21:00,24:00
-      API_URL: /predict
-      API_PORT: 5001
-      API_HOST: ly-api_app-1
       INPUT_DIR: input
       PORT: 80
-      TIME_LEN: 4
       TIME_GAP: 3
-
-  api_app:
-    image: api_app
-    restart: unless-stopped
-    volumes:
-      - ./input:/app/input
-      - ./output_image/ec:/app/output_image
-      - ./output_image/cma:/app/output_imageCMA
-    ports:
-      - "5001:5001"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 2
-              capabilities: [gpu]
-    environment:
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-
-  
+      EC_REPORT_HOUR_LIST: 00:00,12:00
+      CMA_REPORT_HOUR_LIST: 00:00,06:00,12:00,18:00
+      TIME_LEN: 12
+      BASE_PATH: /fydq/cloudPredict
+      TZ: Asia/Shanghai
