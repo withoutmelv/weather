@@ -4,7 +4,8 @@ const path = require('path');
 // 路由处理
 const Router = require('koa-router');
 const router = new Router();
-const fs = require('fs').promises;
+const fs = require('fs');
+const fsp = fs.promises;
 const dayjs = require('dayjs');
 const serve = require('koa-static'); // 引入静态文件服务中间件
 const os = require('os');
@@ -36,8 +37,16 @@ function isSafeImageFileName(fileName) {
 
 // 确保日志目录存在
 const logDir = path.join(__dirname, LOG_PATH);
-if (!fs.access(logDir)) {
-  fs.mkdir(logDir);
+if (!fs.existsSync(logDir)) {
+  fs.mkdirSync(logDir, { recursive: true });
+}
+// 确保标题存储文件存在
+if (!fs.existsSync(titleStorePath)) {
+  const dataDir = path.dirname(titleStorePath);
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+  fs.writeFileSync(titleStorePath, '{}');
 }
 
 // 配置winston日志
@@ -123,7 +132,7 @@ async function getLatestReportTime(model) {
 
   const dirPath = path.join(imageDataPath + IMAGEMAP[model]);
   try {
-    const dirList = await fs.readdir(dirPath);
+    const dirList = await fsp.readdir(dirPath);
     const reportDirList = dirList.filter((dirName) => isCompactTimestamp(dirName));
     reportDirList.sort((a, b) => a < b ? 1 : -1);
     if (!reportDirList.length) {
@@ -170,7 +179,7 @@ function getTitleKey(model, reportDate, forcastDate) {
 
 async function readTitleStore() {
   try {
-    const content = await fs.readFile(titleStorePath, 'utf8');
+    const content = await fsp.readFile(titleStorePath, 'utf8');
     const store = JSON.parse(content);
     return store && typeof store === 'object' && !Array.isArray(store) ? store : {};
   } catch (err) {
@@ -183,8 +192,8 @@ async function readTitleStore() {
 }
 
 async function writeTitleStore(store) {
-  await fs.mkdir(path.dirname(titleStorePath), { recursive: true });
-  await fs.writeFile(titleStorePath, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
+  await fsp.mkdir(path.dirname(titleStorePath), { recursive: true });
+  await fsp.writeFile(titleStorePath, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
 }
 
 function readRequestText(ctx, maxBytes) {
@@ -385,7 +394,7 @@ router.get(basePath+'/picture/:model/:reportDate/:forcastDate/:fileName?', async
 
   try {
     // 检查文件是否存在并获取状态
-    const stats = await fs.stat(imagePath);
+    const stats = await fsp.stat(imagePath);
 
     // 设置缓存控制头
     ctx.set('Cache-Control', 'public, max-age=3600'); // 缓存1小时
@@ -398,7 +407,7 @@ router.get(basePath+'/picture/:model/:reportDate/:forcastDate/:fileName?', async
     }
 
     // 文件存在，返回图片
-    const data = await fs.readFile(imagePath);
+    const data = await fsp.readFile(imagePath);
     const ext = path.extname(imagePath).toLowerCase();
     const contentType = {
       '.png': 'image/png',
@@ -421,11 +430,11 @@ router.get(basePath+'/picture/:model/:reportDate/:forcastDate/:fileName?', async
     // 文件不存在或其他错误
     try {
       // 检查目录是否存在
-      await fs.access(dirPath, fs.constants.F_OK);
+      await fsp.access(dirPath, fs.constants.F_OK);
       logger.info(`目录存在: ${dirPath}`);
 
       // 目录存在，读取目录内容
-      const files = await fs.readdir(dirPath);
+      const files = await fsp.readdir(dirPath);
       logger.info(`目录内容: ${files.join(', ')}`);
 
       if (files.length === 0) {

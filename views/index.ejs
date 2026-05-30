@@ -307,13 +307,6 @@
                 <!-- 图片网格 -->
                 <div id="canvasImageStage" class="relative h-full overflow-hidden bg-white flex items-center justify-center">
                     <canvas id="weatherCanvas" class="max-w-full max-h-full object-contain transition-transform duration-300 ease-in-out"></canvas>
-                    <div id="imageTitleEditor" class="hidden absolute items-center gap-2 bg-white">
-                        <input id="imageTitleInput" type="text" maxlength="120" class="flex-1 min-w-0 p-1 border border-gray-300 rounded focus:outline-none text-sm text-gray-800"/>
-                        <div id="imageTitleMeta" class="text-xs text-gray-500 whitespace-nowrap"></div>
-                        <button id="saveTitleBtn" class="bg-blue-500 text-white py-1 px-2 rounded text-sm">保存</button>
-                        <button id="cancelTitleBtn" class="bg-gray-100 text-gray-600 py-1 px-2 rounded text-sm">取消</button>
-                        <button id="resetTitleBtn" class="bg-gray-100 text-gray-600 py-1 px-2 rounded text-sm">恢复默认</button>
-                    </div>
                 </div>
             </div>
         </div>
@@ -617,10 +610,7 @@
         let currentImagePathFragment = '';
         let currentImageDefaultTitle = '';
         let currentImageTitle = '';
-        let currentImageTitleIsCustom = false;
-        let currentImageTitleUpdatedAt = '';
         let currentCompositeState = null;
-        let currentCanvasTitleBox = null;
         let imageTitleRequestId = 0;
 
         function parseCompactDateTime(value) {
@@ -644,19 +634,19 @@
         function buildDefaultImageTitle(src) {
             const params = String(src).split('/');
             if (params.length < 3) {
-                return '起报时间';
+                return '起报时间（北京时）';
             }
             const reportDate = params[params.length - 2];
             const forcastDate = params[params.length - 1];
             const reportTime = parseCompactDateTime(reportDate);
             const forcastTime = parseCompactDateTime(forcastDate);
             if (!reportTime || !forcastTime) {
-                return '起报时间';
+                return '起报时间（北京时）';
             }
             const displayReportTime = new Date(reportTime.getTime());
             displayReportTime.setUTCHours(displayReportTime.getUTCHours() + DISPLAY_TIME_OFFSET_HOURS);
             const durationHours = Math.max(0, Math.round((forcastTime.getTime() - reportTime.getTime()) / (60 * 60 * 1000)));
-            return `起报时间${formatTitleDateTime(displayReportTime)}(+${durationHours}h)`;
+            return `起报时间（北京时）${formatTitleDateTime(displayReportTime)}(+${durationHours}h)`;
         }
 
         function getImageTitleUrl(src) {
@@ -664,49 +654,9 @@
             return `${basePath}/title/${src}`;
         }
 
-        function getImageTitleElements() {
-            return {
-                editor: document.querySelector('#imageTitleEditor'),
-                input: document.querySelector('#imageTitleInput'),
-                meta: document.querySelector('#imageTitleMeta'),
-            };
-        }
-
         function setImageTitleText(title) {
             currentImageTitle = title || currentImageDefaultTitle || '';
             redrawCurrentComposite();
-            updateCanvasTitleOverlayLayout();
-        }
-
-        function showImageTitleEditor(show) {
-            const { editor } = getImageTitleElements();
-            if (!editor) {
-                return;
-            }
-            updateImageTitleMeta();
-            editor.classList.toggle('hidden', !show);
-            editor.classList.toggle('flex', show);
-            updateCanvasTitleOverlayLayout();
-        }
-
-        function updateImageTitleMeta() {
-            const { meta } = getImageTitleElements();
-            if (!meta) {
-                return;
-            }
-            const statusText = currentImageTitleIsCustom ? '已修改' : '未修改';
-            const updatedText = currentImageTitleUpdatedAt || '无';
-            meta.textContent = `当前标题：${statusText}｜上次修改：${updatedText}`;
-        }
-
-        function openImageTitleEditor() {
-            const { input } = getImageTitleElements();
-            if (input) {
-                input.value = currentImageTitle || currentImageDefaultTitle;
-            }
-            showImageTitleEditor(true);
-            input?.focus();
-            input?.select();
         }
 
         function redrawCurrentComposite() {
@@ -723,15 +673,9 @@
 
         async function syncImageTitle(src) {
             const requestId = ++imageTitleRequestId;
-            const isSameImage = currentImagePathFragment === src;
             currentImagePathFragment = src;
             currentImageDefaultTitle = buildDefaultImageTitle(src);
-            currentImageTitleIsCustom = false;
-            currentImageTitleUpdatedAt = '';
             setImageTitleText(currentImageDefaultTitle);
-            if (!isSameImage) {
-                showImageTitleEditor(false);
-            }
 
             try {
                 const response = await fetch(getImageTitleUrl(src), { cache: 'no-store' });
@@ -739,147 +683,13 @@
                     return;
                 }
                 const data = await response.json();
-                currentImageTitleIsCustom = Boolean(data.isCustom && data.title);
-                currentImageTitleUpdatedAt = currentImageTitleIsCustom ? (data.updatedAt || '') : '';
-                setImageTitleText(currentImageTitleIsCustom ? data.title : currentImageDefaultTitle);
+                const customTitle = Boolean(data.isCustom && data.title) ? data.title : '';
+                setImageTitleText(customTitle || currentImageDefaultTitle);
             } catch (err) {
                 if (requestId === imageTitleRequestId && currentImagePathFragment === src) {
-                    currentImageTitleIsCustom = false;
-                    currentImageTitleUpdatedAt = '';
                     setImageTitleText(currentImageDefaultTitle);
                 }
             }
-        }
-
-        async function saveImageTitle() {
-            const { input } = getImageTitleElements();
-            if (!input || !currentImagePathFragment) {
-                return;
-            }
-            const imagePath = currentImagePathFragment;
-            const defaultTitle = currentImageDefaultTitle;
-            const title = input.value.trim();
-            try {
-                const response = await fetch(getImageTitleUrl(imagePath), {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ title }),
-                });
-                const data = await response.json();
-                if (!response.ok) {
-                    throw new Error(data.status || '标题保存失败');
-                }
-                if (currentImagePathFragment === imagePath) {
-                    currentImageTitleIsCustom = Boolean(data.isCustom && data.title);
-                    currentImageTitleUpdatedAt = currentImageTitleIsCustom ? (data.updatedAt || '') : '';
-                    setImageTitleText(currentImageTitleIsCustom ? data.title : defaultTitle);
-                    showImageTitleEditor(false);
-                }
-            } catch (err) {
-                alert(err.message || '标题保存失败');
-            }
-        }
-
-        async function resetImageTitle() {
-            if (!currentImagePathFragment) {
-                return;
-            }
-            const imagePath = currentImagePathFragment;
-            const defaultTitle = currentImageDefaultTitle;
-            try {
-                const response = await fetch(getImageTitleUrl(imagePath), { method: 'DELETE' });
-                const data = await response.json();
-                if (!response.ok) {
-                    throw new Error(data.status || '标题删除失败');
-                }
-                if (currentImagePathFragment === imagePath) {
-                    currentImageTitleIsCustom = false;
-                    currentImageTitleUpdatedAt = '';
-                    setImageTitleText(defaultTitle);
-                    showImageTitleEditor(false);
-                }
-            } catch (err) {
-                alert(err.message || '标题删除失败');
-            }
-        }
-
-        function bindImageTitleEditor() {
-            const { input } = getImageTitleElements();
-            const saveButton = document.querySelector('#saveTitleBtn');
-            const cancelButton = document.querySelector('#cancelTitleBtn');
-            const resetButton = document.querySelector('#resetTitleBtn');
-            const canvas = document.querySelector('#weatherCanvas');
-            saveButton?.addEventListener('click', saveImageTitle);
-            cancelButton?.addEventListener('click', () => showImageTitleEditor(false));
-            resetButton?.addEventListener('click', resetImageTitle);
-            input?.addEventListener('keydown', (event) => {
-                if (event.key === 'Enter') {
-                    saveImageTitle();
-                }
-                if (event.key === 'Escape') {
-                    showImageTitleEditor(false);
-                }
-            });
-            canvas?.addEventListener('dblclick', (event) => {
-                if (isCanvasTitleHit(event)) {
-                    openImageTitleEditor();
-                }
-            });
-            window.addEventListener('resize', updateCanvasTitleOverlayLayout);
-        }
-
-        function updateCanvasTitleOverlayLayout() {
-            const canvas = document.querySelector('#weatherCanvas');
-            const stage = document.querySelector('#canvasImageStage');
-            const { editor } = getImageTitleElements();
-            if (!canvas || !stage || !editor || !currentCanvasTitleBox || !canvas.width || !canvas.height) {
-                return;
-            }
-
-            const canvasRect = canvas.getBoundingClientRect();
-            const stageRect = stage.getBoundingClientRect();
-            const scaleX = canvasRect.width / canvas.width;
-            const scaleY = canvasRect.height / canvas.height;
-            const boxLeft = canvasRect.left - stageRect.left + currentCanvasTitleBox.x * scaleX;
-            const boxTop = canvasRect.top - stageRect.top + currentCanvasTitleBox.y * scaleY;
-            const boxWidth = currentCanvasTitleBox.width * scaleX;
-            const boxHeight = currentCanvasTitleBox.height * scaleY;
-            const canvasLeft = canvasRect.left - stageRect.left;
-            const canvasTop = canvasRect.top - stageRect.top;
-            const canvasWidth = canvasRect.width;
-            const editorWidth = Math.min(
-                Math.max(boxWidth + 320, 720),
-                Math.max(280, canvasWidth - 32)
-            );
-            editor.style.width = `${editorWidth}px`;
-            editor.style.left = `${canvasLeft + (canvasWidth - editorWidth) / 2}px`;
-            editor.style.top = `${Math.max(canvasTop + 8, boxTop - 6)}px`;
-        }
-
-        function isCanvasTitleHit(event) {
-            const canvas = document.querySelector('#weatherCanvas');
-            if (!canvas || !currentCanvasTitleBox) {
-                return false;
-            }
-            const rect = canvas.getBoundingClientRect();
-            if (
-                event.clientX < rect.left ||
-                event.clientX > rect.right ||
-                event.clientY < rect.top ||
-                event.clientY > rect.bottom
-            ) {
-                return false;
-            }
-            const canvasX = (event.clientX - rect.left) * canvas.width / rect.width;
-            const canvasY = (event.clientY - rect.top) * canvas.height / rect.height;
-            return (
-                canvasX >= currentCanvasTitleBox.x - 48 &&
-                canvasX <= currentCanvasTitleBox.x + currentCanvasTitleBox.width + 48 &&
-                canvasY >= currentCanvasTitleBox.y - 28 &&
-                canvasY <= currentCanvasTitleBox.y + currentCanvasTitleBox.height + 28
-            );
         }
 
         function getImgUrlList(src) {
@@ -904,8 +714,6 @@
     function loadImg(src) {
         const basePath = "<%= basePath %>"
         currentCompositeState = null;
-        currentCanvasTitleBox = null;
-        updateCanvasTitleOverlayLayout();
         syncImageTitle(src);
         // 清除可能存在的轮询定时器
         if (window.pollInterval) {
@@ -1060,8 +868,6 @@
             statusElement.style.display = 'flex';
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             currentCompositeState = null;
-            currentCanvasTitleBox = null;
-            updateCanvasTitleOverlayLayout();
         });
     }
 
@@ -1092,16 +898,9 @@
             }
             titleFontSize -= 2;
         } while (true);
-        const titleWidth = ctx.measureText(title).width;
         const titleX = baseWidth / 2;
         const titleY = (120 - titleFontSize) / 2;
         ctx.fillText(title, titleX, titleY);
-        currentCanvasTitleBox = {
-            x: ((baseWidth - titleWidth) / 2) * scaleX,
-            y: titleY * scaleY,
-            width: titleWidth * scaleX,
-            height: titleFontSize * scaleY,
-        };
 
         function createMapPanel(dataImg) {
             const panelWidth = 672;
@@ -1144,7 +943,6 @@
         });
 
         ctx.restore();
-        updateCanvasTitleOverlayLayout();
     }
     // 创建状态显示元素（如果不存在）
     function createStatusElement() {
@@ -1166,7 +964,6 @@
     }
     // 页面加载完成后加载初始图片
     document.addEventListener('DOMContentLoaded', () => {
-        bindImageTitleEditor();
         if (buttons.length > 0) {
             buttons[0].click();
         }
