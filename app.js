@@ -29,6 +29,10 @@ const IMAGEMAP = {
   'CMA': 'CMA',
 }
 
+function isSafeImageFileName(fileName) {
+  return !fileName || /^[A-Za-z0-9][A-Za-z0-9._-]*\.(png|jpg|jpeg|gif)$/i.test(fileName);
+}
+
 
 // 确保日志目录存在
 const logDir = path.join(__dirname, LOG_PATH);
@@ -365,15 +369,16 @@ router.delete(basePath+'/title/:model/:reportDate/:forcastDate', async (ctx) => 
 });
 
 // 添加图片请求处理路由
-router.get(basePath+'/picture/:model/:reportDate/:forcastDate', async (ctx) => {
-  const { model, reportDate, forcastDate } = ctx.params;
-  if (!validateImageRouteParams(model, reportDate, forcastDate)) {
+router.get(basePath+'/picture/:model/:reportDate/:forcastDate/:fileName?', async (ctx) => {
+  const { model, reportDate, forcastDate, fileName } = ctx.params;
+  const targetFileName = fileName || IMAGE_NAME;
+  if (!validateImageRouteParams(model, reportDate, forcastDate) || !isSafeImageFileName(targetFileName)) {
     ctx.status = 400;
     ctx.body = { status: '参数错误' };
     return;
   }
-  logger.info(`图片请求 - model: ${model}, reportDate: ${reportDate}, forcastDate: ${forcastDate}`);
-  const imagePath = path.join(imageDataPath + IMAGEMAP[model], reportDate, dayjs(forcastDate).format('YYYYMMDDHHmm'), IMAGE_NAME);
+  logger.info(`图片请求 - model: ${model}, reportDate: ${reportDate}, forcastDate: ${forcastDate}, fileName: ${targetFileName}`);
+  const imagePath = path.join(imageDataPath + IMAGEMAP[model], reportDate, dayjs(forcastDate).format('YYYYMMDDHHmm'), targetFileName);
   const dirPath = path.join(imageDataPath + IMAGEMAP[model], reportDate, dayjs(forcastDate).format('YYYYMMDDHHmm'));
   const year = dayjs(reportDate).year() + '';
   const dateStr = dayjs(reportDate).format('YYYYMMDD');

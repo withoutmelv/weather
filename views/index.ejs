@@ -303,21 +303,17 @@
             </div>
 
             <!-- 右侧图片区域 -->
-            <div class="w-full lg:w-full h-screen relative overflow-hidden pic-container bg-white flex flex-col">
-                <div class="h-12 border-b border-gray-200 flex items-center justify-center relative px-4 bg-white">
-                    <div id="imageTitleText" class="text-center text-base font-bold text-gray-800 truncate w-full px-16">
-                    </div>
-                    <div id="imageTitleEditor" class="hidden absolute inset-x-3 top-1/2 -translate-y-1/2 items-center gap-2 bg-white">
+            <div class="w-full lg:w-full h-screen relative overflow-hidden pic-container bg-white">
+                <!-- 图片网格 -->
+                <div id="canvasImageStage" class="relative h-full overflow-hidden bg-white flex items-center justify-center">
+                    <canvas id="weatherCanvas" class="max-w-full max-h-full object-contain transition-transform duration-300 ease-in-out"></canvas>
+                    <div id="imageTitleEditor" class="hidden absolute items-center gap-2 bg-white">
                         <input id="imageTitleInput" type="text" maxlength="120" class="flex-1 min-w-0 p-1 border border-gray-300 rounded focus:outline-none text-sm text-gray-800"/>
+                        <div id="imageTitleMeta" class="text-xs text-gray-500 whitespace-nowrap"></div>
                         <button id="saveTitleBtn" class="bg-blue-500 text-white py-1 px-2 rounded text-sm">保存</button>
                         <button id="cancelTitleBtn" class="bg-gray-100 text-gray-600 py-1 px-2 rounded text-sm">取消</button>
                         <button id="resetTitleBtn" class="bg-gray-100 text-gray-600 py-1 px-2 rounded text-sm">恢复默认</button>
                     </div>
-                    <button id="editTitleBtn" class="absolute right-3 top-1/2 -translate-y-1/2 bg-blue-500 text-white py-1 px-2 rounded text-sm">编辑</button>
-                </div>
-                <!-- 图片网格 -->
-                <div class="relative flex-1 overflow-hidden">
-                    <img id="weatherImage" class="img-content w-full h-full object-contain transition-transform duration-300 ease-in-out" src="" alt="">
                 </div>
             </div>
         </div>
@@ -595,10 +591,10 @@
 
 <script>
 	    const startDate = "<%= initialDisplayDate %>"
-	    const minSelectableDate = "2026-05-01"
+	    const minSelectableDate = "2025-07-22"
 	    flatpickr("#myID", {
         locale: 'zh',
-	        minDate: minSelectableDate,
+	        // minDate: minSelectableDate,
         disable: [
             function(date) {
                 return new Date(date).getTime() > new Date().getTime();
@@ -620,6 +616,11 @@
         const cacheList = new Set();
         let currentImagePathFragment = '';
         let currentImageDefaultTitle = '';
+        let currentImageTitle = '';
+        let currentImageTitleIsCustom = false;
+        let currentImageTitleUpdatedAt = '';
+        let currentCompositeState = null;
+        let currentCanvasTitleBox = null;
         let imageTitleRequestId = 0;
 
         function parseCompactDateTime(value) {
@@ -637,7 +638,7 @@
         }
 
         function formatTitleDateTime(date) {
-            return `${formatRawDate(date)} ${padTimePart(date.getUTCHours())}-${padTimePart(date.getUTCMinutes())}`;
+            return `${formatRawDate(date)} ${padTimePart(date.getUTCHours())}:${padTimePart(date.getUTCMinutes())}`;
         }
 
         function buildDefaultImageTitle(src) {
@@ -655,7 +656,7 @@
             const displayReportTime = new Date(reportTime.getTime());
             displayReportTime.setUTCHours(displayReportTime.getUTCHours() + DISPLAY_TIME_OFFSET_HOURS);
             const durationHours = Math.max(0, Math.round((forcastTime.getTime() - reportTime.getTime()) / (60 * 60 * 1000)));
-            return `起报时间 ${formatTitleDateTime(displayReportTime)}(+${durationHours}h)`;
+            return `起报时间${formatTitleDateTime(displayReportTime)}(+${durationHours}h)`;
         }
 
         function getImageTitleUrl(src) {
@@ -665,28 +666,59 @@
 
         function getImageTitleElements() {
             return {
-                text: document.querySelector('#imageTitleText'),
                 editor: document.querySelector('#imageTitleEditor'),
                 input: document.querySelector('#imageTitleInput'),
-                editButton: document.querySelector('#editTitleBtn'),
+                meta: document.querySelector('#imageTitleMeta'),
             };
         }
 
         function setImageTitleText(title) {
-            const { text } = getImageTitleElements();
-            if (text) {
-                text.textContent = title;
-            }
+            currentImageTitle = title || currentImageDefaultTitle || '';
+            redrawCurrentComposite();
+            updateCanvasTitleOverlayLayout();
         }
 
         function showImageTitleEditor(show) {
-            const { editor, editButton } = getImageTitleElements();
-            if (!editor || !editButton) {
+            const { editor } = getImageTitleElements();
+            if (!editor) {
                 return;
             }
+            updateImageTitleMeta();
             editor.classList.toggle('hidden', !show);
             editor.classList.toggle('flex', show);
-            editButton.classList.toggle('hidden', show);
+            updateCanvasTitleOverlayLayout();
+        }
+
+        function updateImageTitleMeta() {
+            const { meta } = getImageTitleElements();
+            if (!meta) {
+                return;
+            }
+            const statusText = currentImageTitleIsCustom ? '已修改' : '未修改';
+            const updatedText = currentImageTitleUpdatedAt || '无';
+            meta.textContent = `当前标题：${statusText}｜上次修改：${updatedText}`;
+        }
+
+        function openImageTitleEditor() {
+            const { input } = getImageTitleElements();
+            if (input) {
+                input.value = currentImageTitle || currentImageDefaultTitle;
+            }
+            showImageTitleEditor(true);
+            input?.focus();
+            input?.select();
+        }
+
+        function redrawCurrentComposite() {
+            if (!currentCompositeState) {
+                return;
+            }
+            drawComposite(
+                currentCompositeState.canvas,
+                currentCompositeState.ctx,
+                currentCompositeState.images,
+                currentCompositeState.info
+            );
         }
 
         async function syncImageTitle(src) {
@@ -694,6 +726,8 @@
             const isSameImage = currentImagePathFragment === src;
             currentImagePathFragment = src;
             currentImageDefaultTitle = buildDefaultImageTitle(src);
+            currentImageTitleIsCustom = false;
+            currentImageTitleUpdatedAt = '';
             setImageTitleText(currentImageDefaultTitle);
             if (!isSameImage) {
                 showImageTitleEditor(false);
@@ -705,9 +739,13 @@
                     return;
                 }
                 const data = await response.json();
-                setImageTitleText(data.isCustom && data.title ? data.title : currentImageDefaultTitle);
+                currentImageTitleIsCustom = Boolean(data.isCustom && data.title);
+                currentImageTitleUpdatedAt = currentImageTitleIsCustom ? (data.updatedAt || '') : '';
+                setImageTitleText(currentImageTitleIsCustom ? data.title : currentImageDefaultTitle);
             } catch (err) {
                 if (requestId === imageTitleRequestId && currentImagePathFragment === src) {
+                    currentImageTitleIsCustom = false;
+                    currentImageTitleUpdatedAt = '';
                     setImageTitleText(currentImageDefaultTitle);
                 }
             }
@@ -734,7 +772,9 @@
                     throw new Error(data.status || '标题保存失败');
                 }
                 if (currentImagePathFragment === imagePath) {
-                    setImageTitleText(data.isCustom && data.title ? data.title : defaultTitle);
+                    currentImageTitleIsCustom = Boolean(data.isCustom && data.title);
+                    currentImageTitleUpdatedAt = currentImageTitleIsCustom ? (data.updatedAt || '') : '';
+                    setImageTitleText(currentImageTitleIsCustom ? data.title : defaultTitle);
                     showImageTitleEditor(false);
                 }
             } catch (err) {
@@ -755,6 +795,8 @@
                     throw new Error(data.status || '标题删除失败');
                 }
                 if (currentImagePathFragment === imagePath) {
+                    currentImageTitleIsCustom = false;
+                    currentImageTitleUpdatedAt = '';
                     setImageTitleText(defaultTitle);
                     showImageTitleEditor(false);
                 }
@@ -764,18 +806,11 @@
         }
 
         function bindImageTitleEditor() {
-            const { text, input, editButton } = getImageTitleElements();
+            const { input } = getImageTitleElements();
             const saveButton = document.querySelector('#saveTitleBtn');
             const cancelButton = document.querySelector('#cancelTitleBtn');
             const resetButton = document.querySelector('#resetTitleBtn');
-            editButton?.addEventListener('click', () => {
-                if (input && text) {
-                    input.value = text.textContent.trim() || currentImageDefaultTitle;
-                }
-                showImageTitleEditor(true);
-                input?.focus();
-                input?.select();
-            });
+            const canvas = document.querySelector('#weatherCanvas');
             saveButton?.addEventListener('click', saveImageTitle);
             cancelButton?.addEventListener('click', () => showImageTitleEditor(false));
             resetButton?.addEventListener('click', resetImageTitle);
@@ -787,6 +822,64 @@
                     showImageTitleEditor(false);
                 }
             });
+            canvas?.addEventListener('dblclick', (event) => {
+                if (isCanvasTitleHit(event)) {
+                    openImageTitleEditor();
+                }
+            });
+            window.addEventListener('resize', updateCanvasTitleOverlayLayout);
+        }
+
+        function updateCanvasTitleOverlayLayout() {
+            const canvas = document.querySelector('#weatherCanvas');
+            const stage = document.querySelector('#canvasImageStage');
+            const { editor } = getImageTitleElements();
+            if (!canvas || !stage || !editor || !currentCanvasTitleBox || !canvas.width || !canvas.height) {
+                return;
+            }
+
+            const canvasRect = canvas.getBoundingClientRect();
+            const stageRect = stage.getBoundingClientRect();
+            const scaleX = canvasRect.width / canvas.width;
+            const scaleY = canvasRect.height / canvas.height;
+            const boxLeft = canvasRect.left - stageRect.left + currentCanvasTitleBox.x * scaleX;
+            const boxTop = canvasRect.top - stageRect.top + currentCanvasTitleBox.y * scaleY;
+            const boxWidth = currentCanvasTitleBox.width * scaleX;
+            const boxHeight = currentCanvasTitleBox.height * scaleY;
+            const canvasLeft = canvasRect.left - stageRect.left;
+            const canvasTop = canvasRect.top - stageRect.top;
+            const canvasWidth = canvasRect.width;
+            const editorWidth = Math.min(
+                Math.max(boxWidth + 320, 720),
+                Math.max(280, canvasWidth - 32)
+            );
+            editor.style.width = `${editorWidth}px`;
+            editor.style.left = `${canvasLeft + (canvasWidth - editorWidth) / 2}px`;
+            editor.style.top = `${Math.max(canvasTop + 8, boxTop - 6)}px`;
+        }
+
+        function isCanvasTitleHit(event) {
+            const canvas = document.querySelector('#weatherCanvas');
+            if (!canvas || !currentCanvasTitleBox) {
+                return false;
+            }
+            const rect = canvas.getBoundingClientRect();
+            if (
+                event.clientX < rect.left ||
+                event.clientX > rect.right ||
+                event.clientY < rect.top ||
+                event.clientY > rect.bottom
+            ) {
+                return false;
+            }
+            const canvasX = (event.clientX - rect.left) * canvas.width / rect.width;
+            const canvasY = (event.clientY - rect.top) * canvas.height / rect.height;
+            return (
+                canvasX >= currentCanvasTitleBox.x - 48 &&
+                canvasX <= currentCanvasTitleBox.x + currentCanvasTitleBox.width + 48 &&
+                canvasY >= currentCanvasTitleBox.y - 28 &&
+                canvasY <= currentCanvasTitleBox.y + currentCanvasTitleBox.height + 28
+            );
         }
 
         function getImgUrlList(src) {
@@ -810,6 +903,9 @@
         }
     function loadImg(src) {
         const basePath = "<%= basePath %>"
+        currentCompositeState = null;
+        currentCanvasTitleBox = null;
+        updateCanvasTitleOverlayLayout();
         syncImageTitle(src);
         // 清除可能存在的轮询定时器
         if (window.pollInterval) {
@@ -819,120 +915,241 @@
 
         const imgList = getImgUrlList(src);
         imgList.forEach((img) => {
-            if (cacheList.has(img)) {
-                return;
-            }
-            cacheList.add(img);
-            fetch(basePath + '/picture/' + img)
+            ['inputs.png', 'preds-inputs.png', 'modified.png'].forEach(file => {
+                const cacheKey = `${img}/${file}`;
+                if (cacheList.has(cacheKey)) {
+                    return;
+                }
+                cacheList.add(cacheKey);
+                // 预加载子图片
+                fetch(`${basePath}/picture/${img}/${file}`);
+            });
         })
-        const imgContent = document.querySelector('.img-content');
-        const imgContainer = imgContent.parentNode;
+
+        const canvas = document.getElementById('weatherCanvas');
+        const ctx = canvas.getContext('2d');
         const statusElement = document.querySelector('.loading-status') || createStatusElement();
         statusElement.style.display = 'none';
 
-        // 创建临时图片对象预加载
-        const tempImg = new Image();
-
-        // 声明当前请求控制器变量
         if (window.currentImageRequest) {
-            // 取消上一次未完成的请求
             window.currentImageRequest.abort();
             window.currentImageRequest = null;
-            // 清除临时图片URL，避免内存泄漏
-            if (window.tempImageUrl) {
-                URL.revokeObjectURL(window.tempImageUrl);
-                window.tempImageUrl = null;
-            }
         }
 
-        // 创建新的请求控制器
         const abortController = new AbortController();
         window.currentImageRequest = abortController;
-        fetch(basePath + '/picture/' + src, { signal: abortController.signal })
-            .then(response => {
-                // 请求成功后清除当前请求标识
-                window.currentImageRequest = null;
-                if (response.status === 200) {
-                    return response.blob();
-                } else {
-                    return response.json().then(data => {
-                        throw new Error(data.status || '加载失败');
-                    });
-                }
-            })
-            .then(blob => {
-                // 清除轮询定时器
-                if (window.pollInterval) {
-                    clearInterval(window.pollInterval);
-                    window.pollInterval = null;
-                }
 
-                // 清除之前的临时URL
-                // if (window.tempImageUrl) {
-                //     URL.revokeObjectURL(window.tempImageUrl);
-                // }
-                window.tempImageUrl = URL.createObjectURL(blob);
+        // 获取时间信息用于绘制
+        const params = src.split('/');
+        const model = params[0];
+        const reportStr = params[1];
+        const forcastStr = params[2];
+        
+        const reportTime = parseCompactDateTime(reportStr);
+        const forcastTime = parseCompactDateTime(forcastStr);
+        
+        const displayReportTime = new Date(reportTime.getTime());
+        displayReportTime.setUTCHours(displayReportTime.getUTCHours() + DISPLAY_TIME_OFFSET_HOURS);
+        const displayForcastTime = new Date(forcastTime.getTime());
+        displayForcastTime.setUTCHours(displayForcastTime.getUTCHours() + DISPLAY_TIME_OFFSET_HOURS);
+        
+        const durationHours = Math.max(0, Math.round((forcastTime.getTime() - reportTime.getTime()) / (60 * 60 * 1000)));
 
-                // 使用临时图片加载blob，确保完全加载后再显示
-                // tempImg.onload = function() {
-                //     // 隐藏状态元素
-                //     statusElement.style.display = 'none';
-                //     // 显示图片并设置源
-                //     imgContent.style.display = 'block';
-                //     imgContent.src = window.tempImageUrl;
-                // };
-                statusElement.style.display = 'none';
-                imgContent.style.display = 'block';
-                imgContent.src = window.tempImageUrl;
-            })
-            .catch(error => {
-                // 请求被取消时不显示错误
-                if (error.name !== 'AbortError') {
-                    // 仅在非"数据预测中"状态下才隐藏图片
-                    if (error.message !== '数据预测中') {
-                        imgContent.style.display = 'none';
-                        imgContent.src = '';
-                    }
-                }
+        const info = {
+            model,
+            reportTime: formatTitleDateTime(displayReportTime),
+            forcastTime: formatTitleDateTime(displayForcastTime),
+            duration: `(+${durationHours}h)`
+        };
 
-
-
-                // 显示错误状态
-                if (error.message === '数据预测中') {
-                    statusElement.innerHTML = '<div class="spinner"></div> 模型预测中...';
-                    statusElement.className = 'loading-status text-center py-4 text-blue-600';
-
-                    // 设置轮询
-                    window.pollInterval = setInterval(() => {
-                        if (document.querySelector('.loading-status') &&
-                            document.querySelector('.loading-status').textContent.includes('模型预测中')) {
-                            loadImg(src);
-                        } else if (window.pollInterval) {
-                            clearInterval(window.pollInterval);
-                            window.pollInterval = null;
-                        }
-                    }, 50000);
-                } else {
-                    if (window.pollInterval) {
-                        clearInterval(window.pollInterval);
-                        window.pollInterval = null;
-                    }
-
-                    if (error.message === '无数据') {
-                        statusElement.textContent = '暂无数据';
-                        statusElement.className = 'loading-status text-center py-4 text-red-600';
-                    } else {
-                        statusElement.textContent = '暂无数据';
-                        statusElement.className = 'loading-status text-center py-4 text-orange-600';
-                    }
-                }
-                statusElement.style.display = 'block';
+        // 并行加载所有资源，允许部分失败
+        const loadImage = (url) => {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = () => {
+                    console.error(`图片加载失败: ${url}`);
+                    resolve(null);
+                };
+                img.src = url;
             });
+        };
+
+        const fetchImageBlob = (fileName) => {
+            return fetch(`${basePath}/picture/${src}/${fileName}`, { signal: abortController.signal })
+                .then(res => {
+                    if (res.status === 202) throw new Error('数据预测中');
+                    if (res.status !== 200) return null;
+                    return res.blob();
+                })
+                .then(blob => {
+                    if (!blob) return null;
+                    const url = URL.createObjectURL(blob);
+                    return loadImage(url).then((img) => {
+                        URL.revokeObjectURL(url);
+                        return img;
+                    });
+                })
+                .catch(err => {
+                    if (err.name === 'AbortError') throw err;
+                    if (err.message === '数据预测中') throw err;
+                    console.warn(`无法获取图片: ${fileName}`, err);
+                    return null;
+                });
+        };
+
+        const backgroundUrl = model === 'EC' ? `${basePath}/background_ec.png` : `${basePath}/background_cma.png`;
+
+        Promise.all([
+            fetchImageBlob('inputs.png'),
+            fetchImageBlob('preds-inputs.png'),
+            fetchImageBlob('modified.png'),
+            loadImage(backgroundUrl),
+            loadImage(`${basePath}/china_transparent.png`)
+        ]).then(([imgInputs, imgPreds, imgModified, imgBg, imgChinaTrans]) => {
+            statusElement.style.display = 'none';
+            const hasAllLayers = imgInputs && imgPreds && imgModified;
+            if (imgBg && imgChinaTrans && hasAllLayers) {
+                currentCompositeState = {
+                    canvas,
+                    ctx,
+                    images: { 
+                    inputs: imgInputs, 
+                    preds: imgPreds, 
+                    modified: imgModified,
+                    bg: imgBg,
+                    map: imgChinaTrans
+                    },
+                    info
+                };
+                redrawCurrentComposite();
+            } else if (imgBg && imgChinaTrans && (imgInputs || imgPreds || imgModified)) {
+                currentCompositeState = {
+                    canvas,
+                    ctx,
+                    images: { 
+                    inputs: imgInputs, 
+                    preds: imgPreds, 
+                    modified: imgModified,
+                    bg: imgBg,
+                    map: imgChinaTrans
+                    },
+                    info
+                };
+                redrawCurrentComposite();
+            } else {
+                throw new Error('暂无数据');
+            }
+        }).catch(error => {
+            if (error.name === 'AbortError') return;
+
+            if (error.message === '数据预测中') {
+                statusElement.innerHTML = '<div class="spinner"></div> 模型预测中...';
+                statusElement.className = 'loading-status text-center py-4 text-blue-600';
+                window.pollInterval = setInterval(() => {
+                    if (document.querySelector('.loading-status')?.textContent.includes('模型预测中')) {
+                        loadImg(src);
+                    } else {
+                        clearInterval(window.pollInterval);
+                    }
+                }, 50000);
+            } else {
+                statusElement.textContent = error.message || '暂无数据';
+                statusElement.className = 'loading-status text-center py-4 text-orange-600';
+            }
+            statusElement.style.display = 'flex';
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            currentCompositeState = null;
+            currentCanvasTitleBox = null;
+            updateCanvasTitleOverlayLayout();
+        });
+    }
+
+    function drawComposite(canvas, ctx, images, info) {
+        const baseWidth = 2250;
+        const baseHeight = 1500;
+        canvas.width = images.bg.naturalWidth || images.bg.width || baseWidth;
+        canvas.height = images.bg.naturalHeight || images.bg.height || baseHeight;
+        
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(images.bg, 0, 0, canvas.width, canvas.height);
+
+        const scaleX = canvas.width / baseWidth;
+        const scaleY = canvas.height / baseHeight;
+        ctx.save();
+        ctx.scale(scaleX, scaleY);
+
+        const title = currentImageTitle || currentImageDefaultTitle || `起报时间${info.reportTime}${info.duration}`;
+        let titleFontSize = 58;
+        const maxTitleWidth = 2060;
+        ctx.fillStyle = '#000000';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        do {
+            ctx.font = `${titleFontSize}px SimHei, "Microsoft YaHei", sans-serif`;
+            if (ctx.measureText(title).width <= maxTitleWidth || titleFontSize <= 42) {
+                break;
+            }
+            titleFontSize -= 2;
+        } while (true);
+        const titleWidth = ctx.measureText(title).width;
+        const titleX = baseWidth / 2;
+        const titleY = (120 - titleFontSize) / 2;
+        ctx.fillText(title, titleX, titleY);
+        currentCanvasTitleBox = {
+            x: ((baseWidth - titleWidth) / 2) * scaleX,
+            y: titleY * scaleY,
+            width: titleWidth * scaleX,
+            height: titleFontSize * scaleY,
+        };
+
+        function createMapPanel(dataImg) {
+            const panelWidth = 672;
+            const panelHeight = 494;
+            const dataSize = 590;
+            const cropHeight = 454;
+            const cropTop = (dataSize - cropHeight) / 2;
+            const pasteX = (panelWidth - dataSize) / 2;
+            const pasteY = (panelHeight - cropHeight) / 2;
+
+            const panelCanvas = document.createElement('canvas');
+            panelCanvas.width = panelWidth;
+            panelCanvas.height = panelHeight;
+            const panelCtx = panelCanvas.getContext('2d');
+            panelCtx.fillStyle = '#ffffff';
+            panelCtx.fillRect(0, 0, panelWidth, panelHeight);
+
+            if (dataImg) {
+                const scaledCanvas = document.createElement('canvas');
+                scaledCanvas.width = dataSize;
+                scaledCanvas.height = dataSize;
+                const scaledCtx = scaledCanvas.getContext('2d');
+                scaledCtx.fillStyle = '#ffffff';
+                scaledCtx.fillRect(0, 0, dataSize, dataSize);
+                scaledCtx.drawImage(dataImg, 0, 0, dataSize, dataSize);
+                panelCtx.drawImage(scaledCanvas, 0, cropTop, dataSize, cropHeight, pasteX, pasteY, dataSize, cropHeight);
+            }
+
+            panelCtx.drawImage(images.map, 0, 0, panelWidth, panelHeight);
+            return panelCanvas;
+        }
+
+        ctx.globalCompositeOperation = 'source-over';
+        [
+            { image: images.inputs, x: 115, y: 194, width: 800, height: 550 },
+            { image: images.preds, x: 115, y: 829, width: 800, height: 550 },
+            { image: images.modified, x: 1125, y: 414, width: 1034, height: 710 },
+        ].forEach((panel) => {
+            ctx.drawImage(createMapPanel(panel.image), panel.x, panel.y, panel.width, panel.height);
+        });
+
+        ctx.restore();
+        updateCanvasTitleOverlayLayout();
     }
     // 创建状态显示元素（如果不存在）
     function createStatusElement() {
         const statusElement = document.createElement('div');
-        const imgContainer = document.querySelector('.img-content').parentNode;
+        const imgContainer = document.getElementById('weatherCanvas').parentNode;
         // 设置状态元素样式使其覆盖在图片上方
         statusElement.style.position = 'absolute';
         statusElement.style.top = '0';
