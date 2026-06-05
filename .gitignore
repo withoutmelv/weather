@@ -1,6 +1,9 @@
 output_image
 output_imageCMA
-
+output_china_image
+output_china_imageCMA
+downloads/
+scripts/
 *.tar
 
 node_modules

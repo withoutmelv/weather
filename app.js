@@ -24,10 +24,34 @@ const basePath = process.env.BASE_PATH;
 const TITLE_STORE_PATH = process.env.TITLE_STORE_PATH || 'data/title-overrides.json';
 const titleStorePath = path.resolve(__dirname, TITLE_STORE_PATH);
 const TITLE_MAX_LENGTH = 120;
+const DEFAULT_MAP_TYPE = 'legacy';
+const DEFAULT_HOME_MAP_TYPE = process.env.DEFAULT_HOME_MAP_TYPE || 'china';
+const OUTPUT_DIR = process.env.OUTPUT_DIR || 'output_image';
 
 const IMAGEMAP = {
   'EC': '',
   'CMA': 'CMA',
+}
+
+function resolveOutputPath(outputPath) {
+  return path.resolve(__dirname, outputPath);
+}
+
+const IMAGE_PRODUCTS = {
+  legacy: {
+    layout: 'legacy',
+    dirs: {
+      EC: imageDataPath,
+      CMA: resolveOutputPath(process.env.CMA_OUTPUT_DIR || `${OUTPUT_DIR}${IMAGEMAP.CMA}`),
+    },
+  },
+  china: {
+    layout: 'china',
+    dirs: {
+      EC: resolveOutputPath(process.env.CHINA_OUTPUT_DIR || 'output_china_image'),
+      CMA: resolveOutputPath(process.env.CHINA_CMA_OUTPUT_DIR || 'output_china_imageCMA'),
+    },
+  },
 }
 
 function isSafeImageFileName(fileName) {
@@ -125,12 +149,30 @@ function getFallbackReportTime(date) {
   return dayjs(fallbackDate).hour(currentHour >= 12 ? 12 : 0).minute(0).format('YYYY-MM-DD HH:mm');
 }
 
-async function getLatestReportTime(model) {
-  if (!Object.prototype.hasOwnProperty.call(IMAGEMAP, model)) {
+function isValidMapType(mapType) {
+  return Object.prototype.hasOwnProperty.call(IMAGE_PRODUCTS, mapType);
+}
+
+function getRequestMapType(ctx, fallbackMapType = DEFAULT_MAP_TYPE) {
+  const mapType = ctx.query.mapType || fallbackMapType;
+  return typeof mapType === 'string' && isValidMapType(mapType) ? mapType : null;
+}
+
+function getImageProduct(mapType) {
+  return isValidMapType(mapType) ? IMAGE_PRODUCTS[mapType] : null;
+}
+
+function getModelImageDir(mapType, model) {
+  const product = getImageProduct(mapType);
+  return product?.dirs?.[model] || null;
+}
+
+async function getLatestReportTime(model, mapType = DEFAULT_MAP_TYPE) {
+  const dirPath = getModelImageDir(mapType, model);
+  if (!dirPath) {
     return null;
   }
 
-  const dirPath = path.join(imageDataPath + IMAGEMAP[model]);
   try {
     const dirList = await fsp.readdir(dirPath);
     const reportDirList = dirList.filter((dirName) => isCompactTimestamp(dirName));
@@ -138,10 +180,10 @@ async function getLatestReportTime(model) {
     if (!reportDirList.length) {
       throw new Error('目录列表为空');
     }
-    logger.info(`${model} 最新目录: ${reportDirList[0]}`);
+    logger.info(`${mapType}/${model} 最新目录: ${reportDirList[0]}`);
     return dayjs(reportDirList[0]).format('YYYY-MM-DD HH:mm');
   } catch (err) {
-    logger.error(`读取${model}目录失败: ${dirPath}`);
+    logger.error(`读取${mapType}/${model}目录失败: ${dirPath}`);
     return null;
   }
 }
@@ -169,11 +211,19 @@ function isCompactTimestamp(value) {
     && date.getUTCMinutes() === minute;
 }
 
-function validateImageRouteParams(model, reportDate, forcastDate) {
-  return isValidModel(model) && isCompactTimestamp(reportDate) && isCompactTimestamp(forcastDate);
+function validateImageRouteParams(mapType, model, reportDate, forcastDate) {
+  return isValidMapType(mapType)
+    && isValidModel(model)
+    && Boolean(getModelImageDir(mapType, model))
+    && isCompactTimestamp(reportDate)
+    && isCompactTimestamp(forcastDate);
 }
 
-function getTitleKey(model, reportDate, forcastDate) {
+function getTitleKey(mapType, model, reportDate, forcastDate) {
+  return `${mapType}/${model}/${reportDate}/${forcastDate}`;
+}
+
+function getLegacyTitleKey(model, reportDate, forcastDate) {
   return `${model}/${reportDate}/${forcastDate}`;
 }
 
@@ -230,6 +280,12 @@ router.get('/', async (ctx) => {
 // 默认路由 (显示最新时间的图片)
 router.get(basePath, async (ctx) => {
   logger.info('首页请求 - 用户访问主页');
+  const mapType = getRequestMapType(ctx, DEFAULT_HOME_MAP_TYPE);
+  if (!mapType) {
+    ctx.status = 400;
+    ctx.body = { status: '地图版本不存在' };
+    return;
+  }
   let START_DATE = process.env.START_DATE || dayjs().subtract(1, 'day').format('YYYY-MM-DD');
   const defaultModel = DEFAULT_MODEL;
   const ECReportHourList = process.env.EC_REPORT_HOUR_LIST.split(',');
@@ -237,7 +293,7 @@ router.get(basePath, async (ctx) => {
 
   let currentReportTime = getFallbackReportTime(START_DATE);
 
-  const latestReportTime = await getLatestReportTime(defaultModel);
+  const latestReportTime = await getLatestReportTime(defaultModel, mapType);
   if (latestReportTime) {
     currentReportTime = latestReportTime;
     START_DATE = dayjs(latestReportTime).format('YYYY-MM-DD') || dayjs().format('YYYY-MM-DD');
@@ -260,21 +316,29 @@ router.get(basePath, async (ctx) => {
     TIME_GAP,
     TIME_LEN,
     basePath,
+    activeMapType: mapType,
   });
 });
 
 router.get(basePath+'/latest/:model', async (ctx) => {
   const { model } = ctx.params;
+  const mapType = getRequestMapType(ctx);
+  if (!mapType) {
+    ctx.status = 400;
+    ctx.body = { status: '地图版本不存在' };
+    return;
+  }
   if (!isValidModel(model)) {
     ctx.status = 400;
     ctx.body = { status: '模型不存在' };
     return;
   }
 
-  const latestReportTime = await getLatestReportTime(model);
+  const latestReportTime = await getLatestReportTime(model, mapType);
   const currentReportTime = latestReportTime || getFallbackReportTime();
 
   ctx.body = {
+    mapType,
     model,
     currentReportTime,
     startDate: dayjs(currentReportTime).format('YYYY-MM-DD'),
@@ -284,7 +348,8 @@ router.get(basePath+'/latest/:model', async (ctx) => {
 
 router.get(basePath+'/title/:model/:reportDate/:forcastDate', async (ctx) => {
   const { model, reportDate, forcastDate } = ctx.params;
-  if (!validateImageRouteParams(model, reportDate, forcastDate)) {
+  const mapType = getRequestMapType(ctx);
+  if (!mapType || !validateImageRouteParams(mapType, model, reportDate, forcastDate)) {
     ctx.status = 400;
     ctx.body = { status: '参数错误' };
     return;
@@ -292,7 +357,8 @@ router.get(basePath+'/title/:model/:reportDate/:forcastDate', async (ctx) => {
 
   try {
     const store = await readTitleStore();
-    const titleRecord = store[getTitleKey(model, reportDate, forcastDate)];
+    const titleRecord = store[getTitleKey(mapType, model, reportDate, forcastDate)]
+      || (mapType === DEFAULT_MAP_TYPE ? store[getLegacyTitleKey(model, reportDate, forcastDate)] : null);
     ctx.body = {
       title: titleRecord?.title || '',
       isCustom: Boolean(titleRecord?.title),
@@ -306,7 +372,8 @@ router.get(basePath+'/title/:model/:reportDate/:forcastDate', async (ctx) => {
 
 router.post(basePath+'/title/:model/:reportDate/:forcastDate', async (ctx) => {
   const { model, reportDate, forcastDate } = ctx.params;
-  if (!validateImageRouteParams(model, reportDate, forcastDate)) {
+  const mapType = getRequestMapType(ctx);
+  if (!mapType || !validateImageRouteParams(mapType, model, reportDate, forcastDate)) {
     ctx.status = 400;
     ctx.body = { status: '参数错误' };
     return;
@@ -331,7 +398,7 @@ router.post(basePath+'/title/:model/:reportDate/:forcastDate', async (ctx) => {
 
   try {
     const store = await readTitleStore();
-    const titleKey = getTitleKey(model, reportDate, forcastDate);
+    const titleKey = getTitleKey(mapType, model, reportDate, forcastDate);
     if (title) {
       const updatedAt = dayjs().format('YYYY-MM-DD HH:mm:ss');
       store[titleKey] = {
@@ -356,7 +423,8 @@ router.post(basePath+'/title/:model/:reportDate/:forcastDate', async (ctx) => {
 
 router.delete(basePath+'/title/:model/:reportDate/:forcastDate', async (ctx) => {
   const { model, reportDate, forcastDate } = ctx.params;
-  if (!validateImageRouteParams(model, reportDate, forcastDate)) {
+  const mapType = getRequestMapType(ctx);
+  if (!mapType || !validateImageRouteParams(mapType, model, reportDate, forcastDate)) {
     ctx.status = 400;
     ctx.body = { status: '参数错误' };
     return;
@@ -364,7 +432,10 @@ router.delete(basePath+'/title/:model/:reportDate/:forcastDate', async (ctx) => 
 
   try {
     const store = await readTitleStore();
-    delete store[getTitleKey(model, reportDate, forcastDate)];
+    delete store[getTitleKey(mapType, model, reportDate, forcastDate)];
+    if (mapType === DEFAULT_MAP_TYPE) {
+      delete store[getLegacyTitleKey(model, reportDate, forcastDate)];
+    }
     await writeTitleStore(store);
     ctx.body = {
       title: '',
@@ -381,16 +452,21 @@ router.delete(basePath+'/title/:model/:reportDate/:forcastDate', async (ctx) => 
 router.get(basePath+'/picture/:model/:reportDate/:forcastDate/:fileName?', async (ctx) => {
   const { model, reportDate, forcastDate, fileName } = ctx.params;
   const targetFileName = fileName || IMAGE_NAME;
-  if (!validateImageRouteParams(model, reportDate, forcastDate) || !isSafeImageFileName(targetFileName)) {
+  const mapType = getRequestMapType(ctx);
+  if (!mapType || !validateImageRouteParams(mapType, model, reportDate, forcastDate) || !isSafeImageFileName(targetFileName)) {
     ctx.status = 400;
     ctx.body = { status: '参数错误' };
     return;
   }
-  logger.info(`图片请求 - model: ${model}, reportDate: ${reportDate}, forcastDate: ${forcastDate}, fileName: ${targetFileName}`);
-  const imagePath = path.join(imageDataPath + IMAGEMAP[model], reportDate, dayjs(forcastDate).format('YYYYMMDDHHmm'), targetFileName);
-  const dirPath = path.join(imageDataPath + IMAGEMAP[model], reportDate, dayjs(forcastDate).format('YYYYMMDDHHmm'));
-  const year = dayjs(reportDate).year() + '';
-  const dateStr = dayjs(reportDate).format('YYYYMMDD');
+  const product = getImageProduct(mapType);
+  const modelDir = getModelImageDir(mapType, model);
+  logger.info(`图片请求 - mapType: ${mapType}, model: ${model}, reportDate: ${reportDate}, forcastDate: ${forcastDate}, fileName: ${targetFileName}`);
+  const imagePath = path.join(modelDir, reportDate, forcastDate, targetFileName);
+  const dirPath = path.join(modelDir, reportDate, forcastDate);
+  const year = reportDate.slice(0, 4);
+  const dateStr = reportDate.slice(0, 8);
+  ctx.set('X-Map-Type', mapType);
+  ctx.set('X-Layout', product.layout);
 
   try {
     // 检查文件是否存在并获取状态
@@ -420,6 +496,8 @@ router.get(basePath+'/picture/:model/:reportDate/:forcastDate/:fileName?', async
     ctx.body = data;
   } catch (err) {
     logger.info(`图片资源不存在: ${reportDate} ${forcastDate} ${JSON.stringify({
+      mapType,
+      model,
       reportDate,
       forcastDate,
       imagePath,
@@ -443,7 +521,7 @@ router.get(basePath+'/picture/:model/:reportDate/:forcastDate/:fileName?', async
         ctx.set('Cache-Control', 'no-cache, no-store, must-revalidate'); // 禁止缓存未完成的请求
         ctx.body = { status: '数据预测中' };
         return;
-      } else if (!files.includes(IMAGE_NAME)) {
+      } else if (!files.includes(targetFileName)) {
         // 目录存在但目标文件不存在
         ctx.status = 404;
         ctx.body = { status: '图片不存在' };
@@ -451,6 +529,8 @@ router.get(basePath+'/picture/:model/:reportDate/:forcastDate/:fileName?', async
       }
     } catch (err) {
       logger.error(`目录不存在: ${dirPath} ${JSON.stringify({
+        mapType,
+        model,
         reportDate,
         forcastDate,
         imagePath,

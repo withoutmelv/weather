@@ -14,6 +14,8 @@ services:
       - /data/ices/temp:/app/temp
       - /SATLAKE/EXTDATA/CMADAAS/DATA/NAFP/NMC/GRAPES-GFS-GLB:/app/inputCMA
       - /data/ices/model_image/cma:/app/output_imageCMA
+      - /data/ices/model_image/china/ec:/app/output_china_image
+      - /data/ices/model_image/china/cma:/app/output_china_imageCMA
     environment:
       NODE_ENV: production
       STATIC_RESOURCE_PATH: public
@@ -21,6 +23,8 @@ services:
       LOG_PATH: logs
       TITLE_STORE_PATH: data/title-overrides.json
       OUTPUT_DIR: output_image
+      CHINA_OUTPUT_DIR: output_china_image
+      CHINA_CMA_OUTPUT_DIR: output_china_imageCMA
       MODEL_LIST: CMA,EC
       DEFAULT_MODEL: EC
       IMAGE_NAME: mix.png

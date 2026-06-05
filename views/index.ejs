@@ -136,10 +136,10 @@
 
 <body class="font-inter bg-gray-50 min-h-screen">
 	    <%
-	        const DISPLAY_TIME_OFFSET_HOURS = 8;
-	        function padTimePart(value) {
-	            return String(value).padStart(2, '0');
-	        }
+		        const DISPLAY_TIME_OFFSET_HOURS = 8;
+		        function padTimePart(value) {
+		            return String(value).padStart(2, '0');
+		        }
 	        function parseRawDate(rawDate) {
 	            const match = String(rawDate).match(/^(\d{4})-(\d{2})-(\d{2})$/);
 	            if (!match) return null;
@@ -238,6 +238,18 @@
             <!-- 左侧时间选择栏 -->
             <div class="w-50 lg:w-50 p-0 max-h-screen overflow-y-auto">
                 <div class="flex items-center mb-2">
+                    <div class="border border-gray-300 w-full flex mapTypeList">
+                        <% [{ value: 'legacy', label: '旧版' }, { value: 'china', label: '全国' }].forEach((option) => { %>
+                            <button
+		                                class="tab-btn w-1/2 <%= activeMapType === option.value ? 'tab-active border-primary shadow-sm' : 'border-primary text-gray-500' %> map-type px-2 py-1 text-center font-bold text-base transition-all duration-200"
+		                                value="<%= option.value %>"
+		                                onclick="locationReload('mapType', this.value)"
+		                                style="font-size: 12px;"
+		                            ><%= option.label %></button>
+                        <% }) %>
+                    </div>
+                </div>
+                <div class="flex items-center mb-2">
                     <div class="border border-gray-300 w-full flex modelList">
                         <% for(let model of modelList) { %>
                             <button class="tab-btn w-1/2 <%= defaultModel === model ? 'tab-active border-primary shadow-sm' : 'border-primary text-gray-500' %> model px-2 py-1 text-center font-bold text-base transition-all duration-200" value=<%= model %> onclick="locationReload('model', this.value)" style="font-size: 12px;"><%= model %></button>
@@ -303,9 +315,9 @@
             </div>
 
             <!-- 右侧图片区域 -->
-            <div class="w-full lg:w-full h-screen relative overflow-hidden pic-container bg-white">
+            <div class="w-full lg:w-full h-screen relative overflow-hidden pic-container bg-white flex flex-col">
                 <!-- 图片网格 -->
-                <div id="canvasImageStage" class="relative h-full overflow-hidden bg-white flex items-center justify-center">
+                <div id="canvasImageStage" class="relative flex-1 min-h-0 overflow-hidden bg-white flex items-center justify-center">
                     <canvas id="weatherCanvas" class="max-w-full max-h-full object-contain transition-transform duration-300 ease-in-out"></canvas>
                 </div>
             </div>
@@ -313,9 +325,72 @@
     </div>
 
         <!-- 根据点击事件切换图片 -->
-    <script>
-	        const DISPLAY_TIME_OFFSET_HOURS = 8;
-	        function parseRawDate(rawDate) {
+	    <script>
+		        const DISPLAY_TIME_OFFSET_HOURS = 8;
+		        const DEFAULT_MAP_TYPE = "<%= activeMapType || 'legacy' %>";
+		        const MAP_LAYOUTS = {
+		            legacy: {
+		                mapAsset: 'china_transparent.png',
+		                panelWidth: 672,
+		                panelHeight: 494,
+		                mode: 'legacyCrop',
+		                preserveAspect: false,
+		            },
+			            china: {
+			                mapAsset: 'whole_china_transparent.svg',
+			                backgroundMode: 'blank',
+			                backgroundAssets: [
+			                    { key: 'logo', file: 'background_logo.png' },
+			                    { key: 'cloudVertical', file: 'background_colorbar_cloud_vertical.png' },
+			                    { key: 'errorVertical', file: 'background_colorbar_error_vertical.png' },
+			                    { key: 'cloudHorizontal', file: 'background_colorbar_cloud_horizontal.png' },
+			                ],
+			                panelWidth: 664,
+			                panelHeight: 400,
+			                mode: 'direct',
+			                dataRect: { x: 72, y: 40, width: 520, height: 320 },
+			                preserveAspect: true,
+			                targets: [
+			                    { imageKey: 'inputs', x: -20, y: 145, width: 1080, height: 650 },
+			                    { imageKey: 'preds', x: -20, y: 846, width: 1080, height: 650 },
+			                    { imageKey: 'modified', x: 1080, y: 352, width: 1238, height: 746 },
+			                ],
+			            },
+			        };
+		        let currentMapType = Object.prototype.hasOwnProperty.call(MAP_LAYOUTS, DEFAULT_MAP_TYPE) ? DEFAULT_MAP_TYPE : 'legacy';
+		        function getCurrentMapType() {
+		            return Object.prototype.hasOwnProperty.call(MAP_LAYOUTS, currentMapType) ? currentMapType : 'legacy';
+		        }
+		        function withMapType(url) {
+		            const separator = url.includes('?') ? '&' : '?';
+		            return `${url}${separator}mapType=${encodeURIComponent(getCurrentMapType())}`;
+		        }
+		        function getCurrentMapLayout() {
+		            return MAP_LAYOUTS[getCurrentMapType()] || MAP_LAYOUTS.legacy;
+		        }
+		        function setMapTypeButtonState(mapType) {
+		            document.querySelectorAll('.map-type').forEach((button) => {
+		                const isActive = button.value === mapType;
+		                button.classList.toggle('tab-active', isActive);
+		                button.classList.toggle('shadow-sm', isActive);
+		                button.classList.toggle('text-gray-500', !isActive);
+		            });
+		        }
+		        function setCurrentMapType(mapType) {
+		            if (!Object.prototype.hasOwnProperty.call(MAP_LAYOUTS, mapType)) {
+		                return false;
+		            }
+		            currentMapType = mapType;
+		            setMapTypeButtonState(mapType);
+		            if (typeof updatePanelViewControls === 'function') {
+		                updatePanelViewControls();
+		            }
+		            if (typeof redrawCurrentComposite === 'function') {
+		                redrawCurrentComposite();
+		            }
+		            return true;
+		        }
+		        function parseRawDate(rawDate) {
 	            const match = String(rawDate).match(/^(\d{4})-(\d{2})-(\d{2})$/);
 	            if (!match) {
 	                return null;
@@ -450,35 +525,58 @@
 	        }
 	        async function fetchLatestReportTime(model) {
 	            const basePath = "<%= basePath %>";
-	            const response = await fetch(`${basePath}/latest/${encodeURIComponent(model)}`, { cache: 'no-store' });
+		            const response = await fetch(withMapType(`${basePath}/latest/${encodeURIComponent(model)}`), { cache: 'no-store' });
 	            if (!response.ok) {
 	                return '';
 	            }
 	            const data = await response.json();
 	            return data.currentReportTime || '';
 	        }
-	        let latestModelRequestId = 0;
-	        async function changeModelToLatest(model) {
-	            const requestId = ++latestModelRequestId;
+	        let locationReloadRequestId = 0;
+	        function loadIfCurrent(requestId, src) {
+	            if (requestId === locationReloadRequestId && src) {
+	                loadImg(src);
+	            }
+	        }
+	        function cancelCurrentImageWork() {
+	            if (window.pollInterval) {
+	                clearInterval(window.pollInterval);
+	                window.pollInterval = null;
+	            }
+	            if (window.currentImageRequest) {
+	                window.currentImageRequest.abort();
+	                window.currentImageRequest = null;
+	            }
+	        }
+	        async function changeModelToLatest(model, requestId) {
 	            let latestReportTime = '';
 	            try {
 	                latestReportTime = await fetchLatestReportTime(model);
 	            } catch (err) {
 	                latestReportTime = '';
 	            }
-	            if (requestId !== latestModelRequestId) {
+	            if (requestId !== locationReloadRequestId) {
 	                return '';
 	            }
 	            return changeModel(model, latestReportTime);
 	        }
 	        function changeModel(model, latestReportTime) {
-	            document.querySelector('.tab-active.model').classList.remove('tab-active');
-	            document.querySelector(`.model[value="${model}"]`).classList.add('tab-active');
+	            const activeModelButton = document.querySelector('.tab-active.model');
+	            const nextModelButton = document.querySelector(`.model[value="${model}"]`);
+	            if (!nextModelButton) {
+	                return '';
+	            }
+	            activeModelButton?.classList.remove('tab-active');
+	            nextModelButton.classList.add('tab-active');
+	            updatePanelViewControls();
 	            const date = getDisplayDateFromReportTime(latestReportTime);
 	            if (latestReportTime) {
 	                setDatePickerValue(date);
 	            }
 	            const reportListDiv = document.querySelector('.reportList');
+	            if (!reportListDiv) {
+	                return '';
+	            }
 	            const reportOptions = buildDisplayReportOptions(model, date);
 	            const latestReportOption = latestReportTime ? reportOptions.find((option) => option.rawDateTime === latestReportTime) : null;
 	            const selectedReport = latestReportOption || reportOptions[0];
@@ -512,12 +610,18 @@
         }
 
 	        function changeForcastAndReportTime(model, reportHour, rawReportDate) {
+	            if (!model || !reportHour) {
+	                return '';
+	            }
 	            // 获取ejs变量forcastHourList
 	            document.querySelector('.tab-active.report')?.classList.remove('tab-active');
 	            rawReportDate = rawReportDate || findReportButton(reportHour, getActiveReportDate())?.dataset.reportDate || document.querySelector('#myID').value;
 	            findReportButton(reportHour, rawReportDate)?.classList.add('tab-active');
 	            const forcastTimes = generateForcastTimes(rawReportDate, reportHour);
 	            const forcastListDiv = document.querySelector('.forcastList');
+	            if (!forcastListDiv) {
+	                return '';
+	            }
 	            forcastListDiv.innerHTML = forcastTimes.length ? `
 	                ${forcastTimes.map((forcast, index)=> {
 	                    return `<button
@@ -545,26 +649,40 @@
         }
 
 	        function changeReportTime(model, reportHour, forcastHour) {
-	            document.querySelector('.tab-active.forcast').classList.remove('tab-active');
-	            document.querySelector(`.forcast[value="${forcastHour}"]`).classList.add('tab-active');
+	            const activeForcastButton = document.querySelector('.tab-active.forcast');
+	            const nextForcastButton = document.querySelector(`.forcast[value="${forcastHour}"]`);
+	            if (!model || !reportHour || !forcastHour || !nextForcastButton) {
+	                return '';
+	            }
+	            activeForcastButton?.classList.remove('tab-active');
+	            nextForcastButton.classList.add('tab-active');
 	            const rawReportDate = getActiveReportDate();
 	            const reportTime = rawReportDate + ' ' + reportHour;
 	            const forcastTime = forcastHour;
             // 去掉日期中的所有符号和空格
             const reportTimeReplace = reportTime.replace(/[^\d]/g, '');
-            const forcastTimeReplace = forcastTime.replace(/[^\d]/g, '');
-            return `${model}/${reportTimeReplace}/${forcastTimeReplace}`;
-        }
+	            const forcastTimeReplace = forcastTime.replace(/[^\d]/g, '');
+	            return `${model}/${reportTimeReplace}/${forcastTimeReplace}`;
+	        }
+
+	        function changeMapType(mapType, requestId) {
+	            if (!setCurrentMapType(mapType)) {
+	                return Promise.resolve('');
+	            }
+	            const activeModel = document.querySelector('.tab-active.model')?.value;
+	            return activeModel ? changeModelToLatest(activeModel, requestId) : Promise.resolve('');
+	        }
 
 	        function locationReload(type, value, rawReportDate) {
+	            const requestId = ++locationReloadRequestId;
+	            cancelCurrentImageWork();
 	            let nextSrc = '';
 	            switch(type) {
+	                case 'mapType':
+	                    changeMapType(value, requestId).then((src) => loadIfCurrent(requestId, src));
+	                    return;
 	                case 'model':
-	                    changeModelToLatest(value).then((src) => {
-	                        if (src) {
-	                            loadImg(src);
-	                        }
-	                    });
+	                    changeModelToLatest(value, requestId).then((src) => loadIfCurrent(requestId, src));
 	                    return;
 	                case 'report':
 	                    nextSrc = changeForcastAndReportTime(document.querySelector('.tab-active.model')?.value, value, rawReportDate);
@@ -574,7 +692,7 @@
 	                    break;
 	            }
 	            if (nextSrc) {
-	                loadImg(nextSrc);
+	                loadIfCurrent(requestId, nextSrc);
 	            }
 	        }
     </script>
@@ -593,14 +711,16 @@
                 return new Date(date).getTime() > new Date().getTime();
             }
         ],
-	        defaultDate: startDate,
-	        onChange: (selectedDates, dateStr, instance) => {
-	            const nextSrc = changeModel(document.querySelector('.tab-active.model')?.value);
-	            if (nextSrc) {
-	                loadImg(nextSrc);
-	            }
-	        }
-	    });
+		        defaultDate: startDate,
+		        onChange: (selectedDates, dateStr, instance) => {
+		            const requestId = ++locationReloadRequestId;
+		            cancelCurrentImageWork();
+		            const nextSrc = changeModel(document.querySelector('.tab-active.model')?.value);
+		            if (nextSrc) {
+		                loadIfCurrent(requestId, nextSrc);
+		            }
+		        }
+		    });
 
 </script>
 
@@ -612,6 +732,95 @@
         let currentImageTitle = '';
         let currentCompositeState = null;
         let imageTitleRequestId = 0;
+        const PANEL_LABELS_BY_MODEL = {
+            EC: {
+                inputs: 'EC数值模式预报总云量',
+                preds: 'EC数值模式总云量误差预测',
+                modified: '校正后的EC数值模式预报总云量',
+            },
+            CMA: {
+                inputs: 'CMA数值模式预报总云量',
+                preds: 'CMA数值模式总云量误差预测',
+                modified: '校正后的CMA数值模式预报总云量',
+            },
+        };
+        let panelViewMode = 'overview';
+        let focusedPanelKey = 'modified';
+
+        function getCurrentModel() {
+            return document.querySelector('.tab-active.model')?.value || "<%= defaultModel %>";
+        }
+
+        function getPanelLabelsForModel(model) {
+            return PANEL_LABELS_BY_MODEL[model] || PANEL_LABELS_BY_MODEL.EC;
+        }
+
+        function isPanelFocusAvailable() {
+            return getCurrentMapType() === 'china';
+        }
+
+        function updatePanelViewControls() {
+            const focusAvailable = isPanelFocusAvailable();
+            if (!focusAvailable && panelViewMode === 'focus') {
+                panelViewMode = 'overview';
+            }
+        }
+
+        function setPanelViewMode(nextMode, panelKey) {
+            const panelLabels = getPanelLabelsForModel(getCurrentModel());
+            if (isPanelFocusAvailable() && nextMode === 'focus' && Object.prototype.hasOwnProperty.call(panelLabels, panelKey)) {
+                panelViewMode = 'focus';
+                focusedPanelKey = panelKey;
+            } else {
+                panelViewMode = 'overview';
+            }
+            updatePanelViewControls();
+            redrawCurrentComposite();
+        }
+
+        function getCanvasBasePoint(event, canvas) {
+            const rect = canvas.getBoundingClientRect();
+            if (!rect.width || !rect.height || !canvas.width || !canvas.height) {
+                return null;
+            }
+            const canvasX = (event.clientX - rect.left) * (canvas.width / rect.width);
+            const canvasY = (event.clientY - rect.top) * (canvas.height / rect.height);
+            return {
+                x: canvasX / (canvas.width / 2250),
+                y: canvasY / (canvas.height / 1500),
+            };
+        }
+
+        function handleCanvasPanelClick(event) {
+            if (!isPanelFocusAvailable()) {
+                return;
+            }
+            if (panelViewMode === 'focus') {
+                setPanelViewMode('overview');
+                return;
+            }
+            if (!currentCompositeState?.panelHitAreas?.length) {
+                return;
+            }
+            const point = getCanvasBasePoint(event, event.currentTarget);
+            if (!point) {
+                return;
+            }
+            const hitArea = [...currentCompositeState.panelHitAreas].reverse().find((area) => {
+                return point.x >= area.x
+                    && point.x <= area.x + area.width
+                    && point.y >= area.y
+                    && point.y <= area.y + area.height;
+            });
+            if (hitArea) {
+                setPanelViewMode('focus', hitArea.imageKey);
+            }
+        }
+
+        function setupPanelViewInteractions() {
+            document.getElementById('weatherCanvas')?.addEventListener('click', handleCanvasPanelClick);
+            updatePanelViewControls();
+        }
 
         function parseCompactDateTime(value) {
             const match = String(value).match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/);
@@ -649,10 +858,10 @@
             return `起报时间（北京时）${formatTitleDateTime(displayReportTime)}(+${durationHours}h)`;
         }
 
-        function getImageTitleUrl(src) {
-            const basePath = "<%= basePath %>";
-            return `${basePath}/title/${src}`;
-        }
+	        function getImageTitleUrl(src) {
+	            const basePath = "<%= basePath %>";
+	            return withMapType(`${basePath}/title/${src}`);
+	        }
 
         function setImageTitleText(title) {
             currentImageTitle = title || currentImageDefaultTitle || '';
@@ -663,12 +872,13 @@
             if (!currentCompositeState) {
                 return;
             }
-            drawComposite(
-                currentCompositeState.canvas,
-                currentCompositeState.ctx,
-                currentCompositeState.images,
-                currentCompositeState.info
-            );
+	            drawComposite(
+	                currentCompositeState.canvas,
+	                currentCompositeState.ctx,
+	                currentCompositeState.images,
+	                currentCompositeState.info,
+	                currentCompositeState.layout
+	            );
         }
 
         async function syncImageTitle(src) {
@@ -711,10 +921,12 @@
 	            })
             return imgUrlList;
         }
-    function loadImg(src) {
-        const basePath = "<%= basePath %>"
-        currentCompositeState = null;
-        syncImageTitle(src);
+	    function loadImg(src) {
+	        const basePath = "<%= basePath %>"
+	        const selectionRequestId = locationReloadRequestId;
+	        const layout = getCurrentMapLayout();
+	        currentCompositeState = null;
+	        syncImageTitle(src);
         // 清除可能存在的轮询定时器
         if (window.pollInterval) {
             clearInterval(window.pollInterval);
@@ -722,17 +934,17 @@
         }
 
         const imgList = getImgUrlList(src);
-        imgList.forEach((img) => {
-            ['inputs.png', 'preds-inputs.png', 'modified.png'].forEach(file => {
-                const cacheKey = `${img}/${file}`;
-                if (cacheList.has(cacheKey)) {
-                    return;
-                }
-                cacheList.add(cacheKey);
-                // 预加载子图片
-                fetch(`${basePath}/picture/${img}/${file}`);
-            });
-        })
+	        imgList.forEach((img) => {
+	            ['inputs.png', 'preds-inputs.png', 'modified.png'].forEach(file => {
+	                const cacheKey = `${getCurrentMapType()}/${img}/${file}`;
+	                if (cacheList.has(cacheKey)) {
+	                    return;
+	                }
+	                cacheList.add(cacheKey);
+	                // 预加载子图片
+	                fetch(withMapType(`${basePath}/picture/${img}/${file}`));
+	            });
+	        })
 
         const canvas = document.getElementById('weatherCanvas');
         const ctx = canvas.getContext('2d');
@@ -746,16 +958,29 @@
 
         const abortController = new AbortController();
         window.currentImageRequest = abortController;
+	        const isCurrentImageRequest = () => {
+	            return selectionRequestId === locationReloadRequestId
+	                && window.currentImageRequest === abortController
+	                && !abortController.signal.aborted
+	                && currentImagePathFragment === src;
+	        };
 
         // 获取时间信息用于绘制
         const params = src.split('/');
         const model = params[0];
         const reportStr = params[1];
         const forcastStr = params[2];
-        
+
         const reportTime = parseCompactDateTime(reportStr);
         const forcastTime = parseCompactDateTime(forcastStr);
-        
+	        if (!reportTime || !forcastTime) {
+	            statusElement.textContent = '参数错误';
+	            statusElement.className = 'loading-status text-center py-4 text-orange-600';
+	            statusElement.style.display = 'flex';
+	            currentCompositeState = null;
+	            return;
+        }
+
         const displayReportTime = new Date(reportTime.getTime());
         displayReportTime.setUTCHours(displayReportTime.getUTCHours() + DISPLAY_TIME_OFFSET_HOURS);
         const displayForcastTime = new Date(forcastTime.getTime());
@@ -783,11 +1008,11 @@
             });
         };
 
-        const fetchImageBlob = (fileName) => {
-            return fetch(`${basePath}/picture/${src}/${fileName}`, { signal: abortController.signal })
-                .then(res => {
-                    if (res.status === 202) throw new Error('数据预测中');
-                    if (res.status !== 200) return null;
+	        const fetchImageBlob = (fileName) => {
+	            return fetch(withMapType(`${basePath}/picture/${src}/${fileName}`), { signal: abortController.signal })
+	                .then(res => {
+	                    if (res.status === 202) throw new Error('数据预测中');
+	                    if (res.status !== 200) return null;
                     return res.blob();
                 })
                 .then(blob => {
@@ -804,52 +1029,75 @@
                     console.warn(`无法获取图片: ${fileName}`, err);
                     return null;
                 });
-        };
+	        };
 
-        const backgroundUrl = model === 'EC' ? `${basePath}/background_ec.png` : `${basePath}/background_cma.png`;
+		        const backgroundUrl = layout.backgroundMode === 'blank'
+		            ? ''
+		            : (model === 'EC' ? `${basePath}/background_ec.png` : `${basePath}/background_cma.png`);
+		        const backgroundPromise = backgroundUrl ? loadImage(backgroundUrl) : Promise.resolve(null);
+		        const backgroundAssetList = layout.backgroundAssets || [];
+		        const backgroundAssetPromises = backgroundAssetList.map((asset) => {
+		            return loadImage(`${basePath}/${asset.file}`).then((img) => [asset.key, img]);
+		        });
+		        const mapUrl = `${basePath}/${layout.mapAsset}`;
 
-        Promise.all([
-            fetchImageBlob('inputs.png'),
-            fetchImageBlob('preds-inputs.png'),
-            fetchImageBlob('modified.png'),
-            loadImage(backgroundUrl),
-            loadImage(`${basePath}/china_transparent.png`)
-        ]).then(([imgInputs, imgPreds, imgModified, imgBg, imgChinaTrans]) => {
-            statusElement.style.display = 'none';
-            const hasAllLayers = imgInputs && imgPreds && imgModified;
-            if (imgBg && imgChinaTrans && hasAllLayers) {
-                currentCompositeState = {
-                    canvas,
-                    ctx,
-                    images: { 
-                    inputs: imgInputs, 
-                    preds: imgPreds, 
-                    modified: imgModified,
-                    bg: imgBg,
-                    map: imgChinaTrans
-                    },
-                    info
-                };
+		        Promise.all([
+		            fetchImageBlob('inputs.png'),
+		            fetchImageBlob('preds-inputs.png'),
+		            fetchImageBlob('modified.png'),
+		            backgroundPromise,
+		            loadImage(mapUrl),
+		            ...backgroundAssetPromises
+		        ]).then(([imgInputs, imgPreds, imgModified, imgBg, imgChinaTrans, ...backgroundAssetEntries]) => {
+		            if (!isCurrentImageRequest()) {
+		                return;
+		            }
+	            statusElement.style.display = 'none';
+	            const hasAllLayers = imgInputs && imgPreds && imgModified;
+	            const hasBackground = layout.backgroundMode === 'blank' || imgBg;
+	            const backgroundAssets = {};
+	            backgroundAssetEntries.forEach(([key, img]) => {
+	                if (img) {
+	                    backgroundAssets[key] = img;
+	                }
+	            });
+	            if (hasBackground && imgChinaTrans && hasAllLayers) {
+	                currentCompositeState = {
+	                    canvas,
+	                    ctx,
+	                    images: { 
+	                    inputs: imgInputs, 
+	                    preds: imgPreds, 
+	                    modified: imgModified,
+		                    bg: imgBg,
+		                    map: imgChinaTrans,
+		                    backgroundAssets
+		                    },
+		                    info,
+		                    layout
+	                };
                 redrawCurrentComposite();
-            } else if (imgBg && imgChinaTrans && (imgInputs || imgPreds || imgModified)) {
-                currentCompositeState = {
-                    canvas,
-                    ctx,
+	            } else if (hasBackground && imgChinaTrans && (imgInputs || imgPreds || imgModified)) {
+	                currentCompositeState = {
+	                    canvas,
+	                    ctx,
                     images: { 
                     inputs: imgInputs, 
                     preds: imgPreds, 
-                    modified: imgModified,
-                    bg: imgBg,
-                    map: imgChinaTrans
-                    },
-                    info
-                };
+	                    modified: imgModified,
+		                    bg: imgBg,
+		                    map: imgChinaTrans,
+		                    backgroundAssets
+		                    },
+	                    info,
+	                    layout
+	                };
                 redrawCurrentComposite();
             } else {
                 throw new Error('暂无数据');
             }
         }).catch(error => {
-            if (error.name === 'AbortError') return;
+            if (error.name === 'AbortError' || !isCurrentImageRequest()) return;
 
             if (error.message === '数据预测中') {
                 statusElement.innerHTML = '<div class="spinner"></div> 模型预测中...';
@@ -871,21 +1119,33 @@
         });
     }
 
-    function drawComposite(canvas, ctx, images, info) {
-        const baseWidth = 2250;
-        const baseHeight = 1500;
-        canvas.width = images.bg.naturalWidth || images.bg.width || baseWidth;
-        canvas.height = images.bg.naturalHeight || images.bg.height || baseHeight;
-        
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(images.bg, 0, 0, canvas.width, canvas.height);
+	    function drawComposite(canvas, ctx, images, info, layout) {
+	        layout = layout || getCurrentMapLayout();
+	        const baseWidth = 2250;
+	        const baseHeight = 1500;
+	        canvas.width = images.bg ? (images.bg.naturalWidth || images.bg.width || baseWidth) : baseWidth;
+	        canvas.height = images.bg ? (images.bg.naturalHeight || images.bg.height || baseHeight) : baseHeight;
+	        
+	        const isFocusView = panelViewMode === 'focus' && isPanelFocusAvailable();
+	        ctx.clearRect(0, 0, canvas.width, canvas.height);
+	        if (layout.backgroundMode === 'blank' || !images.bg) {
+	            ctx.fillStyle = '#ffffff';
+	            ctx.fillRect(0, 0, canvas.width, canvas.height);
+	        } else {
+	            ctx.drawImage(images.bg, 0, 0, canvas.width, canvas.height);
+	        }
 
         const scaleX = canvas.width / baseWidth;
         const scaleY = canvas.height / baseHeight;
         ctx.save();
         ctx.scale(scaleX, scaleY);
 
-        const title = currentImageTitle || currentImageDefaultTitle || `起报时间${info.reportTime}${info.duration}`;
+        const baseTitle = currentImageTitle || currentImageDefaultTitle || `起报时间${info.reportTime}${info.duration}`;
+        const focusedPanelLabel = isFocusView ? getPanelLabelsForModel(getCurrentModel())[focusedPanelKey] || '' : '';
+        const titleLines = [baseTitle];
+        const titleBlockHeight = 120;
+        const titleLineGap = 0;
+        const minTitleFontSize = 42;
         let titleFontSize = 58;
         const maxTitleWidth = 2060;
         ctx.fillStyle = '#000000';
@@ -893,54 +1153,324 @@
         ctx.textBaseline = 'top';
         do {
             ctx.font = `${titleFontSize}px SimHei, "Microsoft YaHei", sans-serif`;
-            if (ctx.measureText(title).width <= maxTitleWidth || titleFontSize <= 42) {
+            const titleFitsWidth = titleLines.every((line) => ctx.measureText(line).width <= maxTitleWidth);
+            const titleHeight = titleLines.length * titleFontSize + (titleLines.length - 1) * titleLineGap;
+            if ((titleFitsWidth && titleHeight <= titleBlockHeight) || titleFontSize <= minTitleFontSize) {
                 break;
             }
             titleFontSize -= 2;
         } while (true);
         const titleX = baseWidth / 2;
-        const titleY = (120 - titleFontSize) / 2;
-        ctx.fillText(title, titleX, titleY);
+        const titleHeight = titleLines.length * titleFontSize + (titleLines.length - 1) * titleLineGap;
+        const titleY = (titleBlockHeight - titleHeight) / 2;
+	        titleLines.forEach((line, index) => {
+	            ctx.fillText(line, titleX, titleY + index * (titleFontSize + titleLineGap));
+	        });
 
-        function createMapPanel(dataImg) {
-            const panelWidth = 672;
-            const panelHeight = 494;
-            const dataSize = 590;
-            const cropHeight = 454;
-            const cropTop = (dataSize - cropHeight) / 2;
-            const pasteX = (panelWidth - dataSize) / 2;
-            const pasteY = (panelHeight - cropHeight) / 2;
+	        function getBackgroundAsset(key) {
+	            return images.backgroundAssets ? images.backgroundAssets[key] : null;
+	        }
 
-            const panelCanvas = document.createElement('canvas');
-            panelCanvas.width = panelWidth;
-            panelCanvas.height = panelHeight;
+	        function drawBackgroundAsset(key, x, y, width, height) {
+	            const asset = getBackgroundAsset(key);
+	            if (!asset) {
+	                return;
+	            }
+	            const drawWidth = width || asset.naturalWidth || asset.width;
+	            const drawHeight = height || asset.naturalHeight || asset.height;
+	            ctx.drawImage(asset, x, y, drawWidth, drawHeight);
+	        }
+
+	        function drawLayoutLogo() {
+	            if (layout.backgroundMode !== 'blank') {
+	                return;
+	            }
+	            drawBackgroundAsset('logo', 40, 8, 199, 106);
+	        }
+
+	        function drawOverviewPanelTitle(label, area) {
+	            if (!label || !area) {
+	                return;
+	            }
+	            const maxWidth = area.width;
+	            const minFontSize = 20;
+	            let fontSize = 28;
+	            ctx.save();
+	            ctx.fillStyle = '#000000';
+	            ctx.textAlign = 'center';
+	            ctx.textBaseline = 'top';
+	            do {
+	                ctx.font = `${fontSize}px SimHei, "Microsoft YaHei", sans-serif`;
+	                if (ctx.measureText(label).width <= maxWidth || fontSize <= minFontSize) {
+	                    break;
+	                }
+	                fontSize -= 2;
+	            } while (true);
+	            ctx.fillText(label, area.x + area.width / 2, Math.max(titleBlockHeight + 8, area.y - 34));
+	            ctx.restore();
+	        }
+
+	        function getVerticalColorbarKey(imageKey) {
+	            return imageKey === 'preds' ? 'errorVertical' : 'cloudVertical';
+	        }
+
+	        function getVerticalColorbarSize(colorbarKey) {
+	            return colorbarKey === 'errorVertical'
+	                ? { width: 97, height: 526 }
+	                : { width: 96, height: 526 };
+	        }
+
+	        function drawOverviewDecorations(panelAreas) {
+	            if (layout.backgroundMode !== 'blank') {
+	                return;
+	            }
+	            const labels = getPanelLabelsForModel(getCurrentModel());
+	            const areaByKey = {};
+	            panelAreas.forEach((area) => {
+	                areaByKey[area.imageKey] = area;
+	                drawOverviewPanelTitle(labels[area.imageKey], area);
+	            });
+
+	            const inputsArea = areaByKey.inputs;
+	            const predsArea = areaByKey.preds;
+	            const modifiedArea = areaByKey.modified;
+	            if (inputsArea) {
+	                drawBackgroundAsset(
+	                    'cloudVertical',
+		                    inputsArea.x + inputsArea.width - 96,
+	                    inputsArea.y + (inputsArea.height - 526) / 2,
+	                    96,
+	                    526
+	                );
+	            }
+	            if (predsArea) {
+	                drawBackgroundAsset(
+	                    'errorVertical',
+		                    predsArea.x + predsArea.width - 97,
+	                    predsArea.y + (predsArea.height - 526) / 2,
+	                    97,
+	                    526
+	                );
+	            }
+	            if (modifiedArea) {
+	                drawBackgroundAsset(
+	                    'cloudHorizontal',
+	                    modifiedArea.x + (modifiedArea.width - 836) / 2,
+		                    modifiedArea.y + modifiedArea.height + 18,
+	                    836,
+	                    88
+	                );
+	            }
+	        }
+
+	        drawLayoutLogo();
+
+	        function createMapPanel(dataImg, renderScale) {
+	            const panelWidth = layout.panelWidth;
+	            const panelHeight = layout.panelHeight;
+	            const normalizedRenderScale = Number.isFinite(renderScale) && renderScale > 0 ? renderScale : 1;
+	            const renderWidth = Math.max(1, Math.round(panelWidth * normalizedRenderScale));
+	            const renderHeight = Math.max(1, Math.round(panelHeight * normalizedRenderScale));
+
+	            const panelCanvas = document.createElement('canvas');
+	            panelCanvas.width = renderWidth;
+            panelCanvas.height = renderHeight;
+            panelCanvas.logicalWidth = panelWidth;
+            panelCanvas.logicalHeight = panelHeight;
             const panelCtx = panelCanvas.getContext('2d');
+            panelCtx.save();
+            panelCtx.scale(renderWidth / panelWidth, renderHeight / panelHeight);
             panelCtx.fillStyle = '#ffffff';
-            panelCtx.fillRect(0, 0, panelWidth, panelHeight);
+	            panelCtx.fillRect(0, 0, panelWidth, panelHeight);
 
-            if (dataImg) {
-                const scaledCanvas = document.createElement('canvas');
-                scaledCanvas.width = dataSize;
-                scaledCanvas.height = dataSize;
-                const scaledCtx = scaledCanvas.getContext('2d');
-                scaledCtx.fillStyle = '#ffffff';
-                scaledCtx.fillRect(0, 0, dataSize, dataSize);
-                scaledCtx.drawImage(dataImg, 0, 0, dataSize, dataSize);
-                panelCtx.drawImage(scaledCanvas, 0, cropTop, dataSize, cropHeight, pasteX, pasteY, dataSize, cropHeight);
-            }
+	            if (dataImg) {
+	                if (layout.mode === 'direct') {
+	                    const rect = layout.dataRect;
+	                    panelCtx.drawImage(dataImg, rect.x, rect.y, rect.width, rect.height);
+	                } else {
+	                    const dataSize = 590;
+	                    const cropHeight = 454;
+	                    const cropTop = (dataSize - cropHeight) / 2;
+	                    const pasteX = (panelWidth - dataSize) / 2;
+	                    const pasteY = (panelHeight - cropHeight) / 2;
+	                    const scaledCanvas = document.createElement('canvas');
+	                    scaledCanvas.width = dataSize;
+	                    scaledCanvas.height = dataSize;
+	                    const scaledCtx = scaledCanvas.getContext('2d');
+	                    scaledCtx.fillStyle = '#ffffff';
+	                    scaledCtx.fillRect(0, 0, dataSize, dataSize);
+	                    scaledCtx.drawImage(dataImg, 0, 0, dataSize, dataSize);
+	                    panelCtx.drawImage(scaledCanvas, 0, cropTop, dataSize, cropHeight, pasteX, pasteY, dataSize, cropHeight);
+	                }
+	            }
 
-            panelCtx.drawImage(images.map, 0, 0, panelWidth, panelHeight);
-            return panelCanvas;
-        }
+	            panelCtx.drawImage(images.map, 0, 0, panelWidth, panelHeight);
+	            panelCtx.restore();
+	            return panelCanvas;
+	        }
 
-        ctx.globalCompositeOperation = 'source-over';
-        [
-            { image: images.inputs, x: 115, y: 194, width: 800, height: 550 },
-            { image: images.preds, x: 115, y: 829, width: 800, height: 550 },
-            { image: images.modified, x: 1125, y: 414, width: 1034, height: 710 },
-        ].forEach((panel) => {
-            ctx.drawImage(createMapPanel(panel.image), panel.x, panel.y, panel.width, panel.height);
-        });
+	        function drawPanel(panelCanvas, panel) {
+	            const panelSourceWidth = panelCanvas.logicalWidth || panelCanvas.width;
+	            const panelSourceHeight = panelCanvas.logicalHeight || panelCanvas.height;
+	            if (!layout.preserveAspect) {
+	                ctx.drawImage(panelCanvas, panel.x, panel.y, panel.width, panel.height);
+	                return {
+	                    x: panel.x,
+	                    y: panel.y,
+	                    width: panel.width,
+	                    height: panel.height,
+	                };
+	            }
+	            const scale = Math.min(panel.width / panelSourceWidth, panel.height / panelSourceHeight);
+	            const width = panelSourceWidth * scale;
+	            const height = panelSourceHeight * scale;
+	            const x = panel.x + (panel.width - width) / 2;
+	            const y = panel.y + (panel.height - height) / 2;
+	            ctx.drawImage(panelCanvas, x, y, width, height);
+	            return { x, y, width, height };
+	        }
+
+	        function getDirectPanelArea(panel) {
+	            if (!layout.preserveAspect) {
+	                return {
+	                    x: panel.x,
+	                    y: panel.y,
+	                    width: panel.width,
+	                    height: panel.height,
+	                };
+	            }
+	            const scale = Math.min(panel.width / layout.panelWidth, panel.height / layout.panelHeight);
+	            const width = layout.panelWidth * scale;
+	            const height = layout.panelHeight * scale;
+	            return {
+	                x: panel.x + (panel.width - width) / 2,
+	                y: panel.y + (panel.height - height) / 2,
+	                width,
+	                height,
+	            };
+	        }
+
+	        function drawDirectMapPanel(dataImg, x, y, width, height) {
+	            const panelScaleX = width / layout.panelWidth;
+	            const panelScaleY = height / layout.panelHeight;
+
+	            ctx.save();
+	            ctx.fillStyle = '#ffffff';
+	            ctx.fillRect(x, y, width, height);
+
+	            if (dataImg) {
+	                if (layout.mode === 'direct') {
+	                    const rect = layout.dataRect;
+	                    ctx.drawImage(
+	                        dataImg,
+	                        x + rect.x * panelScaleX,
+	                        y + rect.y * panelScaleY,
+	                        rect.width * panelScaleX,
+	                        rect.height * panelScaleY
+	                    );
+	                } else {
+	                    const panelCanvas = createMapPanel(dataImg, Math.max(panelScaleX, panelScaleY));
+	                    ctx.drawImage(panelCanvas, x, y, width, height);
+	                    ctx.restore();
+	                    return;
+	                }
+	            }
+
+	            ctx.drawImage(images.map, x, y, width, height);
+	            ctx.restore();
+	        }
+
+	        ctx.globalCompositeOperation = 'source-over';
+	        const defaultTargets = [
+	            { imageKey: 'inputs', x: 115, y: 194, width: 800, height: 550 },
+	            { imageKey: 'preds', x: 115, y: 829, width: 800, height: 550 },
+	            { imageKey: 'modified', x: 1125, y: 414, width: 1034, height: 710 },
+	        ];
+	        const panels = (layout.targets || defaultTargets).map((panel) => {
+	            return {
+	                ...panel,
+	                image: images[panel.imageKey],
+	            };
+	        });
+	        const panelHitAreas = [];
+	        if (isFocusView) {
+	            const focusPanel = panels.find((panel) => panel.imageKey === focusedPanelKey) || panels[0];
+	            if (focusPanel) {
+	                const contentTop = titleBlockHeight;
+	                const focusLabelHeight = 100;
+	                const focusLabelGap = 24;
+	                ctx.fillStyle = '#ffffff';
+	                ctx.fillRect(0, titleBlockHeight, baseWidth, baseHeight - titleBlockHeight);
+	                if (focusedPanelLabel) {
+	                    let focusLabelFontSize = 52;
+	                    const minFocusLabelFontSize = 34;
+	                    ctx.fillStyle = '#000000';
+	                    ctx.textAlign = 'center';
+	                    ctx.textBaseline = 'top';
+	                    do {
+	                        ctx.font = `${focusLabelFontSize}px SimHei, "Microsoft YaHei", sans-serif`;
+	                        if (ctx.measureText(focusedPanelLabel).width <= maxTitleWidth || focusLabelFontSize <= minFocusLabelFontSize) {
+	                            break;
+	                        }
+	                        focusLabelFontSize -= 2;
+	                    } while (true);
+	                    const focusLabelY = contentTop + (focusLabelHeight - focusLabelFontSize) / 2;
+	                    ctx.fillText(focusedPanelLabel, titleX, focusLabelY);
+	                }
+	                const panelTop = contentTop + focusLabelHeight + focusLabelGap;
+	                const maxWidth = baseWidth - 160;
+	                const maxHeight = baseHeight - panelTop - 40;
+	                const colorbarKey = getVerticalColorbarKey(focusPanel.imageKey);
+	                const colorbarAsset = getBackgroundAsset(colorbarKey);
+	                const colorbarSize = getVerticalColorbarSize(colorbarKey);
+	                const colorbarHeightRatio = colorbarAsset ? 0.72 : 0;
+	                const colorbarRightInset = colorbarAsset ? 24 : 0;
+	                const scale = Math.min(maxWidth / layout.panelWidth, maxHeight / layout.panelHeight);
+	                const width = layout.panelWidth * scale;
+	                const height = layout.panelHeight * scale;
+	                const colorbarHeight = colorbarAsset ? height * colorbarHeightRatio : 0;
+	                const colorbarWidth = colorbarAsset ? colorbarSize.width * colorbarHeight / colorbarSize.height : 0;
+	                const x = (baseWidth - width) / 2;
+	                const y = panelTop + (baseHeight - panelTop - height) / 2;
+	                drawDirectMapPanel(focusPanel.image, x, y, width, height);
+	                if (colorbarAsset) {
+	                    drawBackgroundAsset(
+	                        colorbarKey,
+	                        x + width - colorbarWidth - colorbarRightInset,
+	                        y + (height - colorbarHeight) / 2,
+	                        colorbarWidth,
+	                        colorbarHeight
+	                    );
+	                }
+	                panelHitAreas.push({
+	                    imageKey: focusPanel.imageKey,
+	                    x,
+	                    y,
+	                    width,
+	                    height,
+	                });
+	            }
+	        } else {
+	            panels.forEach((panel) => {
+	                const area = layout.mode === 'direct'
+	                    ? getDirectPanelArea(panel)
+	                    : drawPanel(createMapPanel(panel.image), panel);
+	                if (layout.mode === 'direct') {
+	                    drawDirectMapPanel(panel.image, area.x, area.y, area.width, area.height);
+	                }
+	                panelHitAreas.push({
+	                    ...area,
+	                    imageKey: panel.imageKey,
+	                });
+	            });
+	            drawOverviewDecorations(panelHitAreas);
+	        }
+	        if (currentCompositeState) {
+	            currentCompositeState.panelHitAreas = panelHitAreas;
+	        }
+	        canvas.style.cursor = isPanelFocusAvailable()
+	            ? (panelViewMode === 'focus' ? 'zoom-out' : 'zoom-in')
+	            : 'default';
 
         ctx.restore();
     }
@@ -964,6 +1494,7 @@
     }
     // 页面加载完成后加载初始图片
     document.addEventListener('DOMContentLoaded', () => {
+        setupPanelViewInteractions();
         if (buttons.length > 0) {
             buttons[0].click();
         }
