@@ -7,12 +7,12 @@ services:
       - "80:80"
     volumes:
       - /SATLAKE/EXTDATA/DATASHARE/NAFP/ECMWF/HRES:/app/input
-      - /data/ices/model_image/ec:/app/output_image
       - ./logs:/app/logs
       - ./data:/app/data
       - /etc/localtime:/etc/localtime:ro
       - /data/ices/temp:/app/temp
       - /SATLAKE/EXTDATA/CMADAAS/DATA/NAFP/NMC/GRAPES-GFS-GLB:/app/inputCMA
+      - /data/ices/model_image/ec:/app/output_image
       - /data/ices/model_image/cma:/app/output_imageCMA
       - /data/ices/model_image/china/ec:/app/output_china_image
       - /data/ices/model_image/china/cma:/app/output_china_imageCMA
