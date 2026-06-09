@@ -238,18 +238,6 @@
             <!-- 左侧时间选择栏 -->
             <div class="w-50 lg:w-50 p-0 max-h-screen overflow-y-auto">
                 <div class="flex items-center mb-2">
-                    <div class="border border-gray-300 w-full flex mapTypeList">
-                        <% [{ value: 'legacy', label: '旧版' }, { value: 'china', label: '全国' }].forEach((option) => { %>
-                            <button
-		                                class="tab-btn w-1/2 <%= activeMapType === option.value ? 'tab-active border-primary shadow-sm' : 'border-primary text-gray-500' %> map-type px-2 py-1 text-center font-bold text-base transition-all duration-200"
-		                                value="<%= option.value %>"
-		                                onclick="locationReload('mapType', this.value)"
-		                                style="font-size: 12px;"
-		                            ><%= option.label %></button>
-                        <% }) %>
-                    </div>
-                </div>
-                <div class="flex items-center mb-2">
                     <div class="border border-gray-300 w-full flex modelList">
                         <% for(let model of modelList) { %>
                             <button class="tab-btn w-1/2 <%= defaultModel === model ? 'tab-active border-primary shadow-sm' : 'border-primary text-gray-500' %> model px-2 py-1 text-center font-bold text-base transition-all duration-200" value=<%= model %> onclick="locationReload('model', this.value)" style="font-size: 12px;"><%= model %></button>
