@@ -6,6 +6,12 @@ node_modules
 
 input
 
+output/
+output_china_image/
+output_china_imageCMA/
+output_image/
+output_imageCMA/
+
 logs
 
 data/
