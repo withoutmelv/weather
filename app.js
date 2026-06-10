@@ -25,7 +25,7 @@ const TITLE_STORE_PATH = process.env.TITLE_STORE_PATH || 'data/title-overrides.j
 const titleStorePath = path.resolve(__dirname, TITLE_STORE_PATH);
 const TITLE_MAX_LENGTH = 120;
 const DEFAULT_MAP_TYPE = 'legacy';
-const DEFAULT_HOME_MAP_TYPE = process.env.DEFAULT_HOME_MAP_TYPE || DEFAULT_MAP_TYPE;
+const DEFAULT_HOME_MAP_TYPE = process.env.DEFAULT_HOME_MAP_TYPE || 'china';
 const OUTPUT_DIR = process.env.OUTPUT_DIR || 'output_image';
 
 const IMAGEMAP = {
